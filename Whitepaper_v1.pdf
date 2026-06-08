@@ -1,0 +1,40 @@
+QuantumChain Core
+Whitepaper v1.0
+
+Quantum-safe money. No premine. Earn-to-own on mobile.
+
+Founder: Touqeer Ahmad  
+Dunga Bunga, Punjab, Pakistan  
+Launch Date: June 8, 2026
+
+Abstract
+QuantumChain ($QTC) is a quantum-resistant, mobile-first cryptocurrency designed for the 3 billion people without access to banking. There is no premine, no ICO, no company, and no venture funding. Distribution occurs only through Proof-of-Useful-Work, where users run a node on Android devices and contribute anonymized sensor data for public-good research.
+
+1. Founder Commitment & Legal Status
+0% Premine: The founder receives 0 tokens at launch. All tokens are earned by users.
+0% ICO/IDO: No public or private sale has occurred or will occur. This is not an investment contract.
+MIT License: All code is free, open-source, and forkable. This is public infrastructure, not a corporate product.
+No Company: There is no legal entity, foundation, or DAO treasury. The network is maintained by independent node operators.
+Regulatory Position: $QTC is software. Users perform work and receive tokens. This mirrors Bitcoin’s launch in 2009 and is intended to fall outside the definition of a security under SECP and SEC frameworks.
+
+2. Technical Overview
+Consensus: Proof-of-Useful-Work (PoUW). Android devices use accelerometer, gyroscope, and GPS to contribute to open datasets for seismology and traffic research. Hashing uses SHA3-512 + CRYSTALS-Dilithium for quantum resistance.
+Tokenomics: Fixed supply of 3,150,000,000 $QTC. Block time: 60 seconds. Emission: ~150 $QTC per block, halving every 4 years. 100% of emission goes to node operators.
+Mobile-First: No GPU or ASIC mining. A 2018-era Android phone can run a full node. Target: 3B users.
+
+3. How to Earn $QTC
+1. Download qc-node.apk from GitHub Releases.
+2. Enable background sensor permissions.
+3. Node runs and earns ~150 $QTC/day. No staking. No deposits.
+
+4. Roadmap
+Day 0: GitHub, Twitter, Telegram live. Whitepaper v1.0 published.
+Day 7: Testnet APK release. First public nodes.
+Day 30: Mainnet launch if 100+ independent nodes.
+Year 1: Academic partnerships for sensor data. 1M nodes.
+
+5. Disclaimer
+This is experimental software. No value is promised or guaranteed. You may earn nothing. Use at your own risk. The founder has no obligation to develop or maintain the software. This document is not financial advice.
+
+"If I get nothing it's okay. But if 3B people get money, we all win."
+— Touqeer Ahmad
