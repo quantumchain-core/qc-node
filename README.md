@@ -27,3 +27,7 @@ Users do work, get tokens. Like Bitcoin 2009.
 **Status**: Building in public.
 
 > "If I get nothing it's okay. But if 3B people get money, we all win." — Touqeer
+---
+**Community**
+Telegram: t.me/QuantumChainFounders
+X/Twitter: x.com/Mr_Sunny_GamerZ
