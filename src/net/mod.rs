@@ -1,9 +1,9 @@
 use chrono::Utc;
-use futures::StreamExt;
 use libp2p::{
+    futures::StreamExt,
     gossipsub, identity, mdns, noise, tcp, yamux,
-    swarm::{NetworkBehaviour, SwarmBuilder, SwarmEvent},
-    PeerId, Swarm, Transport,
+    swarm::{NetworkBehaviour, SwarmEvent},
+    PeerId, SwarmBuilder, Transport,
 };
 use std::time::Duration;
 use tokio::time;
@@ -39,23 +39,17 @@ pub async fn run_node() -> Result<(), Box<dyn std::error::Error>> {
     let local_peer_id = PeerId::from(local_key.public());
     log::info!("Local peer id: {local_peer_id}");
 
-    let transport = tcp::tokio::Transport::default()
-        .upgrade(libp2p::core::upgrade::Version::V1)
-        .authenticate(noise::Config::new(&local_key)?)
-        .multiplex(yamux::Config::default())
-        .boxed();
-
     let gossipsub_config = gossipsub::ConfigBuilder::default()
-        .heartbeat_interval(Duration::from_secs(10))
-        .validation_mode(gossipsub::ValidationMode::Strict)
-        .build()
-        .expect("Valid config");
+       .heartbeat_interval(Duration::from_secs(10))
+       .validation_mode(gossipsub::ValidationMode::Strict)
+       .build()
+       .expect("Valid config");
 
     let mut gossipsub = gossipsub::Behaviour::new(
         gossipsub::MessageAuthenticity::Signed(local_key.clone()),
         gossipsub_config,
     )
-    .expect("Correct Gossipsub instantiation");
+   .expect("Correct Gossipsub instantiation");
 
     let topic = gossipsub::IdentTopic::new(RAMPURA_TESTNET_0_CHAIN_ID);
     gossipsub.subscribe(&topic)?;
@@ -64,15 +58,16 @@ pub async fn run_node() -> Result<(), Box<dyn std::error::Error>> {
     let behaviour = QtcBehaviour { gossipsub, mdns };
 
     let mut swarm = SwarmBuilder::with_existing_identity(local_key)
-        .with_tokio()
-        .with_tcp(
+       .with_tokio()
+       .with_tcp(
             tcp::Config::default(),
             noise::Config::new,
             yamux::Config::default,
         )?
-        .with_behaviour(|_| behaviour)?
-        .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
-        .build();
+       .with_dns()?
+       .with_behaviour(|_| behaviour)?
+       .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
+       .build();
 
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
 
@@ -104,13 +99,13 @@ pub async fn run_node() -> Result<(), Box<dyn std::error::Error>> {
                             swarm.dial(multiaddr).ok();
                         }
                     }
-                    SwarmEvent::NewListenAddr { address, .. } => {
+                    SwarmEvent::NewListenAddr { address,.. } => {
                         log::info!("Listening on {address}");
                     }
-                    SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                    SwarmEvent::ConnectionEstablished { peer_id,.. } => {
                         log::info!("Connected to {peer_id}");
                     }
-                    SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
+                    SwarmEvent::ConnectionClosed { peer_id, cause,.. } => {
                         log::info!("Disconnected from {peer_id}: {cause:?}");
                     }
                     _ => {}
