@@ -148,7 +148,7 @@ mod tests {
     use pqcrypto::sign::dilithium3::*;
     use pqcrypto_traits::sign::{PublicKey as _, SecretKey as _, SignedMessage as _};
 
-    #
+    #[test]
     fn test_dilithium_sign_verify() {
         let (pk, sk) = keypair();
         let msg = b"Rampura test block";
@@ -159,7 +159,7 @@ mod tests {
         assert_eq!(verified, msg);
     }
 
-    #
+    #[test]
     fn test_block_serialization() {
         let (pk, sk) = keypair();
         let sm = sign(b"test", &sk);
