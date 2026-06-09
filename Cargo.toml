@@ -8,15 +8,15 @@ name = "qc-node"
 path = "src/main.rs"
 
 [dependencies]
-# libp2p - FIXED: added macros + tokio features
+# libp2p - CRITICAL: added "macros" and "tokio" features
 libp2p = { version = "0.53", features = [
     "tcp", 
     "noise", 
     "yamux", 
     "mdns", 
-    "gossipsub", 
+    "gossipsub",
     "macros", # FIXES: #[derive(NetworkBehaviour)]
-    "tokio" # FIXES: mdns::tokio + with_tokio()
+    "tokio" # FIXES: mdns::tokio, with_tokio(), swarm.next()
 ]}
 
 tokio = { version = "1.0", features = ["full"] }
@@ -27,6 +27,6 @@ serde_json = "1.0"
 hex = "0.4"
 chrono = "0.4" # FIXES: use chrono::Utc
 
-# Dilithium - CORRECT feature name
+# Dilithium - CORRECT features
 pqcrypto = { version = "0.17", default-features = false, features = ["pqcrypto-dilithium", "serialization"] }
 pqcrypto-traits = "0.3"
