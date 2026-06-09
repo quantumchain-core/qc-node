@@ -115,28 +115,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     propagation_source: peer_id,
                     message,
                     .. // Ignores message_id and other new fields
+                        // FIX: pqcrypto API - reconstruct SignedMessage from bytes
+                SwarmEvent::Behaviour(QcBehaviourEvent::Gossipsub(gossipsub::Event::Message {
+                    propagation_source: peer_id,
+                    message,
+                   .. 
                 })) => {
                     if let Ok(block) = serde_json::from_slice::<Block>(&message.data) {
-                        // FIX 7: Correct pqcrypto verify API
                         if let Ok(pk) = PublicKey::from_bytes(&block.public_key) {
-                            // open() verifies and returns the original message
-                            match open(&block.signature, &pk) {
-                                Ok(verified_data) => {
-                                    if verified_data == block.data.as_bytes() {
-                                        info!("✅ Valid M3 Block #{} from {} - Dilithium verified", block.height, peer_id);
-                                    } else {
-                                        error!("❌ Data mismatch Block #{} from {}", block.height, peer_id);
+                            // CRITICAL FIX: Convert Vec<u8> back to SignedMessage
+                            if let Ok(sm) = SignedMessage::from_bytes(&block.signature) {
+                                match open(&sm, &pk) {
+                                    Ok(verified_data) => {
+                                        if verified_data == block.data.as_bytes() {
+                                            info!("✅ Valid M3 Block #{} from {} - Dilithium verified", block.height, peer_id);
+                                        } else {
+                                            error!("❌ Data mismatch Block #{} from {}", block.height, peer_id);
+                                        }
                                     }
+                                    Err(_) => error!("❌ Invalid Dilithium sig Block #{} from {}", block.height, peer_id),
                                 }
-                                Err(_) => error!("❌ Invalid Dilithium sig Block #{} from {}", block.height, peer_id),
+                            } else {
+                                error!("❌ Corrupt signature bytes Block #{} from {}", block.height, peer_id);
                             }
                         } else {
                             error!("❌ Invalid Dilithium pubkey Block #{} from {}", block.height, peer_id);
                         }
                     }
                 },
-                _ => {}
-            }
-        }
-    }
-}
