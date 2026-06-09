@@ -3,6 +3,10 @@ name = "qc-node"
 version = "0.1.1-m3"
 edition = "2021"
 
+[[bin]]
+name = "qc-node"
+path = "src/main.rs"
+
 [dependencies]
 libp2p = { version = "0.53", features = ["tcp", "noise", "yamux", "mdns", "gossipsub"] }
 tokio = { version = "1.0", features = ["full"] }
@@ -10,5 +14,6 @@ log = "0.4"
 env_logger = "0.11"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+hex = "0.4"
 pqcrypto-dilithium = "0.5"
 pqcrypto-traits = "0.3"
