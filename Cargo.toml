@@ -8,13 +8,15 @@ license = "MIT"
 repository = "https://github.com/quantumchain-core/qc-node"
 
 [dependencies]
-pqcrypto-dilithium = "0.17"
+pqcrypto-dilithium = "0.5"
 pqcrypto-traits = "0.3"
 sha3 = "0.10"
-libp2p = { version = "0.53", features = ["tcp", "noise", "yamux"] }
+hex = "0.4"
+libp2p = { version = "0.53", features = ["gossipsub", "mdns", "noise", "tcp", "yamux"] }
 tokio = { version = "1", features = ["full"] }
 rocksdb = "0.22"
 serde = { version = "1.0", features = ["derive"] }
+chrono = "0.4"
 
 [lib]
 name = "qc_node"
