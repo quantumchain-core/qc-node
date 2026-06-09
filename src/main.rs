@@ -3,9 +3,9 @@ use libp2p::{
     swarm::{NetworkBehaviour, SwarmEvent},
     tcp, yamux, SwarmBuilder,
 };
-use libp2p::futures::StreamExt; // FIX 1: This gives you .select_next_some()
+use libp2p::futures::StreamExt;
 use pqcrypto::sign::dilithium3::*;
-use pqcrypto_traits::sign::{PublicKey as _, SecretKey as _, SignedMessage as _}; // FIX 2: Import trait for .as_bytes()
+use pqcrypto_traits::sign::{PublicKey as _, SecretKey as _, SignedMessage as _};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::error::Error;
@@ -33,6 +33,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
     info!("Starting QuantumChain Rampura Testnet Node M3 - Dilithium");
 
+    // Generate Dilithium3 keypair on startup
     let (pk, sk) = keypair();
     info!("Node Dilithium PK: {}", hex::encode(pk.as_bytes()));
 
@@ -76,19 +77,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut block_interval = time::interval(Duration::from_secs(30));
 
     loop {
-        // FIX 3: Use swarm.select_next_some() not swarm directly
         tokio::select! {
             _ = block_interval.tick() => {
                 block_height += 1;
                 let peer_id = *swarm.local_peer_id();
                 let block_data = format!("Rampura Block #{} from {}", block_height, peer_id);
                 
+                // Dilithium sign: returns SignedMessage
                 let sm = sign(block_data.as_bytes(), &sk);
                 
                 let block = Block {
                     height: block_height,
                     data: block_data.clone(),
-                    signature: sm.as_bytes().to_vec(), // FIX 4: .as_bytes() works now
+                    signature: sm.as_bytes().to_vec(),
                     public_key: pk.as_bytes().to_vec(),
                 };
 
@@ -99,7 +100,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     info!("Published M3 Block #{} with Dilithium sig", block_height);
                 }
             }
-            // FIX 5: Correctly poll the swarm
             event = swarm.select_next_some() => match event {
                 SwarmEvent::NewListenAddr { address, .. } => {
                     info!("Local node listening on {address}");
@@ -110,20 +110,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
                     }
                 },
-                // FIX 6: Add `..` to ignore message_id field
                 SwarmEvent::Behaviour(QcBehaviourEvent::Gossipsub(gossipsub::Event::Message {
                     propagation_source: peer_id,
                     message,
-                    .. // Ignores message_id and other new fields
-                        // FIX: pqcrypto API - reconstruct SignedMessage from bytes
-                SwarmEvent::Behaviour(QcBehaviourEvent::Gossipsub(gossipsub::Event::Message {
-                    propagation_source: peer_id,
-                    message,
-                   .. 
+                    .. 
                 })) => {
                     if let Ok(block) = serde_json::from_slice::<Block>(&message.data) {
                         if let Ok(pk) = PublicKey::from_bytes(&block.public_key) {
-                            // CRITICAL FIX: Convert Vec<u8> back to SignedMessage
                             if let Ok(sm) = SignedMessage::from_bytes(&block.signature) {
                                 match open(&sm, &pk) {
                                     Ok(verified_data) => {
@@ -143,3 +136,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
                 },
+                _ => {}
+            }
+        }
+    }
+            }
