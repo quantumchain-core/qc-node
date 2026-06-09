@@ -36,3 +36,9 @@ Founder: Touqeer Ahmad, Dunga Bunga, Pakistan
 **For Regulators**: This is open-source software research. No company. No money raised. 
 No tokens sold. No promises of value. Users may earn tokens via future participation. 
 Like Bitcoin 2009.
+
+## Milestones
+- ✅ M1: Dilithium keygen - `v0.1.0-m1` [coming soon]
+- ✅ M2: P2P networking - `v0.1.1-m2` 
+- ✅ M3: Signed blocks - `v0.1.2-m3`
+- 🚧 M4: Chain logic - June 16
