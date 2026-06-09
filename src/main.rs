@@ -3,8 +3,9 @@ use libp2p::{
     swarm::{NetworkBehaviour, SwarmEvent},
     tcp, yamux, PeerId, SwarmBuilder,
 };
+use libp2p::futures::StreamExt; // Fixes select_next_some error
 use pqcrypto_dilithium::dilithium3::*;
-use pqcrypto_traits::sign::{PublicKey, SecretKey, SignedMessage};
+use pqcrypto_traits::sign::{PublicKey as _, SecretKey as _, SignedMessage as _}; // Fixes trait errors
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::error::Error;
@@ -32,18 +33,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
     info!("Starting QuantumChain Rampura Testnet Node M3");
 
-    // Generate Dilithium keypair for this node
+    // Generate Dilithium keypair
     let (pk, sk) = keypair();
-    info!("Node Dilithium PublicKey: {:?}", pk.as_bytes());
+    info!("Node Dilithium PublicKey: {:?}", hex::encode(pk.as_bytes()));
 
     let mut swarm = SwarmBuilder::with_new_identity()
-        .with_tokio()
-        .with_tcp(
+       .with_tokio()
+       .with_tcp(
             tcp::Config::default(),
             noise::Config::new,
             yamux::Config::default,
         )?
-        .with_behaviour(|key| {
+       .with_behaviour(|key| {
             let message_id_fn = |message: &gossipsub::Message| {
                 let mut s = DefaultHasher::new();
                 message.data.hash(&mut s);
@@ -51,11 +52,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             };
 
             let gossipsub_config = gossipsub::ConfigBuilder::default()
-                .heartbeat_interval(Duration::from_secs(10))
-                .validation_mode(gossipsub::ValidationMode::Strict)
-                .message_id_fn(message_id_fn)
-                .build()
-                .map_err(|msg| std::io::Error::new(std::io::ErrorKind::Other, msg))?;
+               .heartbeat_interval(Duration::from_secs(10))
+               .validation_mode(gossipsub::ValidationMode::Strict)
+               .message_id_fn(message_id_fn)
+               .build()
+               .map_err(|msg| std::io::Error::new(std::io::ErrorKind::Other, msg))?;
 
             let gossipsub = gossipsub::Behaviour::new(
                 gossipsub::MessageAuthenticity::Signed(key.clone()),
@@ -65,8 +66,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?;
             Ok(QcBehaviour { gossipsub, mdns })
         })?
-        .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
-        .build();
+       .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
+       .build();
 
     let topic = gossipsub::IdentTopic::new("rampura-blocks");
     swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
@@ -79,17 +80,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         tokio::select! {
             _ = block_interval.tick() => {
-                // Create new block every 30 seconds
                 block_height += 1;
-                let block_data = format!("Rampura Block #{} from {}", block_height, PeerId::from(swarm.local_peer_id()));
+                let peer_id = *swarm.local_peer_id(); // Fixed: dereference &PeerId
+                let block_data = format!("Rampura Block #{} from {}", block_height, peer_id);
                 
-                // Sign with Dilithium
-                let signature = detached_sign(block_data.as_bytes(), &sk);
+                // Sign with Dilithium - correct API
+                let sig = sign(block_data.as_bytes(), &sk);
                 
                 let block = Block {
                     height: block_height,
                     data: block_data.clone(),
-                    signature: signature.as_bytes().to_vec(),
+                    signature: sig.as_bytes().to_vec(),
                     public_key: pk.as_bytes().to_vec(),
                 };
 
@@ -100,7 +101,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     info!("Published M3 Block #{} with Dilithium signature", block_height);
                 }
             }
-            event = swarm.select_next_some() => match event {
+            event = swarm.select_next_some().await => match event { // Fixed: StreamExt in scope
                 SwarmEvent::Behaviour(QcBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
                     for (peer_id, _multiaddr) in list {
                         info!("mDNS discovered peer: {peer_id}");
@@ -113,17 +114,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     message,
                 })) => {
                     if let Ok(block) = serde_json::from_slice::<Block>(&message.data) {
-                        // Verify Dilithium signature
+                        // Verify Dilithium signature - correct API
                         let pk = PublicKey::from_bytes(&block.public_key).unwrap();
-                        let sig = DetachedSignature::from_bytes(&block.signature).unwrap();
+                        let sm = SignedMessage::from_bytes(&block.signature).unwrap();
                         
-                        match verify_detached_signature(&sig, block.data.as_bytes(), &pk) {
-                            Ok(_) => info!("✅ Valid M3 Block #{} from {} - Dilithium signature verified", block.height, peer_id),
+                        match open(&sm, &pk) {
+                            Ok(data) => {
+                                if data == block.data.as_bytes() {
+                                    info!("✅ Valid M3 Block #{} from {} - Dilithium verified", block.height, peer_id);
+                                } else {
+                                    error!("❌ Data mismatch on Block #{} from {}", block.height, peer_id);
+                                }
+                            }
                             Err(_) => error!("❌ Invalid Dilithium signature on Block #{} from {}", block.height, peer_id),
                         }
                     }
                 },
-                SwarmEvent::NewListenAddr { address, .. } => {
+                SwarmEvent::NewListenAddr { address,.. } => {
                     info!("Local node listening on {address}");
                 }
                 _ => {}
