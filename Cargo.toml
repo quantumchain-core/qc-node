@@ -16,10 +16,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 hex = "0.4"
 
-# Use pqcrypto umbrella crate - it handles C compilation better
-pqcrypto = { version = "0.17", default-features = false, features = ["dilithium3"] }
+# FIXED: Correct feature name is pqcrypto-dilithium, not dilithium3
+pqcrypto = { version = "0.17", default-features = false, features = ["pqcrypto-dilithium", "serialization"] }
 pqcrypto-traits = "0.3"
-
-[profile.release]
-opt-level = 3
-lto = true
