@@ -1,85 +1,121 @@
+use chrono::Utc;
+use futures::StreamExt;
 use libp2p::{
-    gossipsub, mdns, noise,
-    swarm::{NetworkBehaviour, SwarmEvent},
-    tcp, yamux, 
-    Swarm, SwarmBuilder,
+    gossipsub, identity, mdns, noise, tcp, yamux,
+    swarm::{NetworkBehaviour, SwarmBuilder, SwarmEvent},
+    PeerId, Swarm, Transport,
 };
-use libp2p::futures::StreamExt;
-use std::error::Error;
-use tokio::time::{Duration, interval};
+use std::time::Duration;
+use tokio::time;
+
 use crate::crypto::dilithium::RAMPURA_TESTNET_0_CHAIN_ID;
 
-// This macro generates QtcBehaviourEvent automatically
 #[derive(NetworkBehaviour)]
+#[behaviour(to_swarm = "QtcBehaviourEvent")]
 pub struct QtcBehaviour {
     pub gossipsub: gossipsub::Behaviour,
     pub mdns: mdns::tokio::Behaviour,
 }
 
-pub async fn start_network() -> Result<(), Box<dyn Error>> {
-    let mut swarm = SwarmBuilder::with_new_identity()
+pub enum QtcBehaviourEvent {
+    Gossipsub(gossipsub::Event),
+    Mdns(mdns::Event),
+}
+
+impl From<gossipsub::Event> for QtcBehaviourEvent {
+    fn from(event: gossipsub::Event) -> Self {
+        QtcBehaviourEvent::Gossipsub(event)
+    }
+}
+
+impl From<mdns::Event> for QtcBehaviourEvent {
+    fn from(event: mdns::Event) -> Self {
+        QtcBehaviourEvent::Mdns(event)
+    }
+}
+
+pub async fn run_node() -> Result<(), Box<dyn std::error::Error>> {
+    let local_key = identity::Keypair::generate_ed25519();
+    let local_peer_id = PeerId::from(local_key.public());
+    log::info!("Local peer id: {local_peer_id}");
+
+    let transport = tcp::tokio::Transport::default()
+        .upgrade(libp2p::core::upgrade::Version::V1)
+        .authenticate(noise::Config::new(&local_key)?)
+        .multiplex(yamux::Config::default())
+        .boxed();
+
+    let gossipsub_config = gossipsub::ConfigBuilder::default()
+        .heartbeat_interval(Duration::from_secs(10))
+        .validation_mode(gossipsub::ValidationMode::Strict)
+        .build()
+        .expect("Valid config");
+
+    let mut gossipsub = gossipsub::Behaviour::new(
+        gossipsub::MessageAuthenticity::Signed(local_key.clone()),
+        gossipsub_config,
+    )
+    .expect("Correct Gossipsub instantiation");
+
+    let topic = gossipsub::IdentTopic::new(RAMPURA_TESTNET_0_CHAIN_ID);
+    gossipsub.subscribe(&topic)?;
+
+    let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id)?;
+    let behaviour = QtcBehaviour { gossipsub, mdns };
+
+    let mut swarm = SwarmBuilder::with_existing_identity(local_key)
         .with_tokio()
         .with_tcp(
             tcp::Config::default(),
             noise::Config::new,
             yamux::Config::default,
         )?
-        .with_behaviour(|key| {
-            let gossipsub_config = gossipsub::ConfigBuilder::default()
-                .heartbeat_interval(Duration::from_secs(1))
-                .build()
-                .expect("Valid config");
-                
-            let gossipsub = gossipsub::Behaviour::new(
-                gossipsub::MessageAuthenticity::Signed(key.clone()),
-                gossipsub_config,
-            )?;
-            
-            let mdns = mdns::tokio::Behaviour::new(
-                mdns::Config::default(), 
-                key.public().to_peer_id()
-            )?;
-            
-            Ok(QtcBehaviour { gossipsub, mdns })
-        })?
+        .with_behaviour(|_| behaviour)?
+        .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
         .build();
-
-    let topic = gossipsub::IdentTopic::new(RAMPURA_TESTNET_0_CHAIN_ID);
-    swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
 
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
 
-    println!("Started P2P node for {}", RAMPURA_TESTNET_0_CHAIN_ID);
-    println!("Local PeerId: {}", swarm.local_peer_id());
+    let mut tick = time::interval(Duration::from_secs(5));
 
-    let mut tick = interval(Duration::from_secs(3));
     loop {
         tokio::select! {
             _ = tick.tick() => {
-                let block_data = format!("block-{}-{}", RAMPURA_TESTNET_0_CHAIN_ID, chrono::Utc::now().timestamp());
+                let block_data = format!("block-{}-{}", RAMPURA_TESTNET_0_CHAIN_ID, Utc::now().timestamp());
                 if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), block_data.as_bytes()) {
-                    println!("Publish error: {:?}", e);
+                    log::error!("Publish error: {e:?}");
                 }
             }
-            event = swarm.next().await => {
+            event = swarm.select_next_some() => {
                 match event {
-                    Some(SwarmEvent::NewListenAddr { address, .. }) => {
-                        println!("Listening on {}", address);
+                    SwarmEvent::Behaviour(QtcBehaviourEvent::Gossipsub(gossipsub::Event::Message {
+                        propagation_source: peer_id,
+                        message_id: id,
+                        message,
+                    })) => {
+                        log::info!(
+                            "Got message: '{}' with id: {id} from peer: {peer_id}",
+                            String::from_utf8_lossy(&message.data),
+                        );
                     }
-                    Some(SwarmEvent::Behaviour(QtcBehaviourEvent::Mdns(mdns::Event::Discovered(list)))) => {
-                        for (peer_id, _multiaddr) in list {
-                            println!("mDNS discovered peer: {}", peer_id);
-                            swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
+                    SwarmEvent::Behaviour(QtcBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
+                        for (peer_id, multiaddr) in list {
+                            log::info!("mDNS discovered a new peer: {peer_id}");
+                            swarm.dial(multiaddr).ok();
                         }
                     }
-                    Some(SwarmEvent::Behaviour(QtcBehaviourEvent::Gossipsub(gossipsub::Event::Message {
-                        message, ..
-                    }))) => {
-                        println!("Received block: {}", String::from_utf8_lossy(&message.data));
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        log::info!("Listening on {address}");
+                    }
+                    SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                        log::info!("Connected to {peer_id}");
+                    }
+                    SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
+                        log::info!("Disconnected from {peer_id}: {cause:?}");
                     }
                     _ => {}
                 }
             }
         }
     }
-                }
+}
