@@ -1,33 +1,38 @@
-# qc-node — QuantumChain Core
+# QuantumChain (QTC)
 
-**Quantum-safe money. No premine. Earn-to-own on mobile.**
+**Status**: Research Phase. Testnet Target: Q4 2026  
+**Mainnet Readiness**: Not Yet Achieved
 
-### Founder Commitment
-- **0% Premine**: Founder gets 0 tokens. Same as users.
-- **0% ICO/IDO**: No public sale. Ever.
-- **Earn-to-Own Only**: Run a node with your phone sensors. Get $QTC.
-- **MIT License**: Free, open-source, forkable. This is public infrastructure.
+QuantumChain is a research project exploring mobile-first, post-quantum Layer 1 blockchain design.
 
-### How It Works
-1. Install node on Android. 
-2. Phone sensors = Proof-of-Useful-Work. 
-3. Earn ~150 $QTC/day. No staking. No mining rigs.
+### Documentation
+- **Whitepaper**: [/whitepaper/QTC_WHITEPAPER_v2.0.md](/whitepaper/QTC_WHITEPAPER_v2.0.md)  
+  Protocol design, tokenomics, and roadmap. v2.0 — October 2025
 
-### For Regulators (SECP, SEC, FIA)
-This is software, not a security. No company. No money raised. No promises.  
-Users do work, get tokens. Like Bitcoin 2009.
+### Security  
+- **Threat Model**: In progress. `THREAT_MODEL.md v1.0` will be published before testnet.  
+  Current status: 74 attack vectors enumerated, 45 analyzed. Economic simulations, 
+  benchmarks, and governance analysis are pending. This is a living research effort.
 
-### Start Now
-1. Read `Whitepaper_v1.pdf` in this repo
-2. Run test node: coming Day 7
-3. Join Telegram: t.me/QuantumChainFounders
+### Key Principles
+- **No Premine**: All QTC minted via participation. No founder allocation.
+- **Open Source**: MIT License. Free to fork.
+- **Post-Quantum**: Researching CRYSTALS-Dilithium signatures.
 
-**Founder**: Touqeer Ahmad, Dunga Bunga, Pakistan  
-**Launch**: June 8, 2026  
-**Status**: Building in public.
+### Limitations
+This is experimental software. No security audits completed. No testnet exists yet. 
+Do not use in production. Do not risk funds. Absence of a known attack does not 
+imply absence of vulnerabilities.
 
-> "If I get nothing it's okay. But if 3B people get money, we all win." — Touqeer
+### Community
+Telegram: t.me/QuantumChainFounders  
+X: x.com/Mr_Sunny_GamerZ
+
+Founder: Touqeer Ahmad, Dunga Bunga, Pakistan
+
+> "If I get nothing it's okay. But if 3B people get access, we all win." — Touqeer
+
 ---
-**Community**
-Telegram: t.me/QuantumChainFounders
-X/Twitter: x.com/Mr_Sunny_GamerZ
+**For Regulators**: This is open-source software research. No company. No money raised. 
+No tokens sold. No promises of value. Users may earn tokens via future participation. 
+Like Bitcoin 2009.
