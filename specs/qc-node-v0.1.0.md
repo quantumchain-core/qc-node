@@ -7,7 +7,7 @@
 
 ## 1. Scope for Alpha
 
-**In**: 
+**In**:
 1. P2P sync with libp2p
 2. Block verification: Dilithium3 + SHA3-256
 3. State: Account model, 500KB max blocks
@@ -26,51 +26,54 @@
 
 ### 2.1 Language & Deps
 **Language**: Rust 1.78. Required for mobile + Dilithium perf. 
-**Core crates**:
-```toml
-[dependencies]
-libp2p = "0.53" # networking
-tokio = { version = "1", features = ["full"] } # async
-pqcrypto-dilithium = "0.17" # Dilithium3
-sha3 = "0.10" # SHA3-256
-rocksdb = "0.22" # state DB
-serde = "1.0" # serialization
-qc-node/
-├── src/
-│ ├── main.rs # CLI entry
-│ ├── config.rs # Chain params, hard-coded for alpha
-│ ├── crypto/
-│ │ ├── dilithium.rs # wrap pqcrypto-dilithium
-│ │ └── hash.rs # SHA3-256
-│ ├── net/
-│ │ ├── p2p.rs # libp2p swarm
-│ │ └── sync.rs # Block sync logic
-│ ├── chain/
-│ │ ├── block.rs # Block struct, 500KB check
-│ │ ├── state.rs # RocksDB account store
-│ │ └── verify.rs # Block verification pipeline
-│ └── teesig/
-│ └── quote.rs # Parse TEE attestation, no verify yet
-pub struct Block {
-    pub height: u64,
-    pub parent_hash: [u8; 32],
-    pub timestamp: u64,
-    pub proposer: DilithiumPublicKey, // 1952 bytes
-    pub tee_quote: Vec<u8>, // Variable, ~2KB. Not verified in alpha
-    pub tx_root: [u8; 32],
-    pub state_root: [u8; 32],
-    pub signature: DilithiumSignature, // 3309 bytes
-}
 
-const MAX_BLOCK_SIZE: usize = 500_000; // 500KB hard cap
-pub struct Account {
-    pub nonce: u64,
-    pub balance: u128, // 0 for alpha, no transfers yet
-    pub pubkey: DilithiumPublicKey,
-}   1. size <= 500KB
+**Core crates**:
+- `libp2p = "0.53"` — networking
+- `tokio = { version = "1", features = ["full"] }` — async
+- `pqcrypto-dilithium = "0.17"` — Dilithium3
+- `sha3 = "0.10"` — SHA3-256
+- `rocksdb = "0.22"` — state DB
+- `serde = "1.0"` — serialization
+
+### 2.2 Module Structure
+
+### 2.3 Consensus Rules Alpha
+1. **Chain Selection**: Longest chain wins. No finality.
+2. **Block Time**: Target 3s. If no block 10s, skip.
+3. **Block Validity**:
+   1. size <= 500KB
    2. height = parent.height + 1
    3. parent_hash == hash(parent)
    4. timestamp > parent.timestamp
    5. dilithium_verify(proposer, block_hash, signature) == true
    6. state_transition(parent.state, block) == Ok(new_state)
    7. new_state.root == state_root
+4. **PoUW**: In alpha, accept any `tee_quote`. Log it. Don't verify.
+
+### 2.4 Networking
+**libp2p**: TCP + Noise + Yamux 
+**Protocols**: `/qtc/sync/0.1.0`, `/qtc/block/0.1.0` 
+**Message Limits**: 512KB max. Protects 3G users.
+
+### 2.5 Mobile Build Targets
+**Android**: `cargo ndk -t arm64-v8a build --release` → `libqc_node.so` 
+**iOS**: `cargo build --target aarch64-apple-ios --release` → `libqc_node.a` 
+**Storage**: All data in `<app_files>/qc-node/`. DB <100MB for alpha.
+
+## 3. Benchmark Targets for v0.1.0
+
+Must pass before APK release. These fill `BENCHMARKS.md v1.1`.
+
+| **Test** | **Device** | **Target** |
+| --- | --- | --- |
+| Dilithium3 verify | Redmi 9A | <50ms |
+| 500KB block verify | Redmi 9A | <3000ms on 3G |
+| App cold start | Redmi 9A | <5s |
+| Idle RAM | Redmi 9A | <150MB |
+| DB size 10k blocks | Any | <100MB |
+
+If any fail, alpha does not ship.
+
+---
+
+**End of spec. This is what I build to. No token. No price. Just code.**
