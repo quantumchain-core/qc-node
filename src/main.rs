@@ -141,6 +141,44 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
             }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pqcrypto::sign::dilithium3::*;
+    use pqcrypto_traits::sign::{PublicKey as _, SecretKey as _, SignedMessage as _};
+
+    #
+    fn test_dilithium_sign_verify() {
+        let (pk, sk) = keypair();
+        let msg = b"Rampura test block";
+
+        let sm = sign(msg, &sk);
+        let verified = open(&sm, &pk).expect("signature should verify");
+
+        assert_eq!(verified, msg);
+    }
+
+    #
+    fn test_block_serialization() {
+        let (pk, sk) = keypair();
+        let sm = sign(b"test", &sk);
+
+        let block = Block {
+            height: 1,
+            data: "test".to_string(),
+            signature: sm.as_bytes().to_vec(),
+            public_key: pk.as_bytes().to_vec(),
+        };
+
+        let json = serde_json::to_string(&block).unwrap();
+        let decoded: Block = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(block.height, decoded.height);
+    }
+        }
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
