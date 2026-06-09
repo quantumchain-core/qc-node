@@ -13,7 +13,7 @@ No tests have been run. No devices have been tested. No performance claims are m
 
 **Do not use this document to estimate performance.**  
 **Do not use this document for device purchasing decisions.**  
-**Do not claim QTC runs on any specific phone.**
+**Do not claim QTC runs on any specific phone.** 
 
 Mainnet launch is conditional on completion of benchmarks defined herein. As of October 2025, all benchmarks are pending.
 
