@@ -14,3 +14,4 @@ jobs:
         run: cargo test crypto::m1_tests --verbose
       - name: Test M2 Network 
         run: cargo test net::m2_tests --verbose
+ 
