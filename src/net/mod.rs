@@ -26,14 +26,14 @@ pub fn new_swarm() -> Result<PeerId, Box<dyn Error>> {
 mod m2_tests {
     use super::*;
 
-    #
+    #[test]
     fn m2_peer_id_works() {
         let pk = vec![0u8; 1952]; // fake M1 pubkey
         let peer_id = peer_id_from_pk(&pk);
         assert!(!peer_id.to_string().is_empty());
     }
 
-    #
+    #[test]
     fn m2_swarm_config_builds() {
         let result = new_swarm();
         assert!(result.is_ok());
