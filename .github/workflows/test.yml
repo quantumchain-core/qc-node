@@ -1,7 +1,7 @@
-name: M1 Tests
+name: Test M1+M2
 on: [push]
 jobs:
-  m1:
+  test:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -10,5 +10,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential
       - uses: dtolnay/rust-toolchain@stable
-      - name: Test M1
+      - name: Test M1 Crypto
         run: cargo test crypto::m1_tests --verbose
+      - name: Test M2 Network 
+        run: cargo test net::m2_tests --verbose
