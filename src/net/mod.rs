@@ -1,7 +1,6 @@
 use libp2p::{gossipsub, swarm::NetworkBehaviour, PeerId, Swarm, Transport};
 use libp2p::identity::Keypair;
 use libp2p::gossipsub::{MessageAuthenticity, ValidationMode};
-use libp2p::swarm::SwarmBuilder;
 use libp2p::core::upgrade;
 use libp2p::noise;
 use libp2p::tcp;
@@ -19,9 +18,9 @@ pub async fn new_swarm() -> Result<Swarm<QcBehaviour>, Box<dyn Error>> {
     println!("Local peer id: {peer_id}");
 
     let gossipsub_config = gossipsub::ConfigBuilder::default()
-    .validation_mode(ValidationMode::Strict)
-    .build()
-    .expect("Valid config");
+   .validation_mode(ValidationMode::Strict)
+   .build()
+   .expect("Valid config");
     
     let gossipsub = gossipsub::Behaviour::new(
         MessageAuthenticity::Signed(id_keys.clone()), 
@@ -31,12 +30,12 @@ pub async fn new_swarm() -> Result<Swarm<QcBehaviour>, Box<dyn Error>> {
     let behaviour = QcBehaviour { gossipsub };
 
     let transport = tcp::tokio::Transport::default()
-      .upgrade(upgrade::Version::V1)
-      .authenticate(noise::Config::new(&id_keys)?)
-      .multiplex(yamux::Config::default())
-      .boxed();
+    .upgrade(upgrade::Version::V1)
+    .authenticate(noise::Config::new(&id_keys)?)
+    .multiplex(yamux::Config::default())
+    .boxed();
 
-    let swarm = SwarmBuilder::with_tokio_executor(transport, behaviour, peer_id).build();
+    let swarm = Swarm::new(transport, behaviour, peer_id);
 
     Ok(swarm)
 }
@@ -64,4 +63,4 @@ mod m4_tests {
         let peer_id = peer_id_from_pk(&pk);
         assert!(!peer_id.to_string().is_empty());
     }
-}
+                                     }
