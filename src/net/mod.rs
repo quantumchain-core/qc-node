@@ -1,4 +1,8 @@
-use chrono::Utc;
+use crate::crypto::{DilithiumPubKey, sign, verify}; // M1→M2 link
+
+// Now your M2 P2P code can do:
+// let (pk, sk) = crypto::generate_keypair();
+// let sig = sign(b"ping", &sk);      use chrono::Utc;
 use libp2p::{
     futures::StreamExt,
     gossipsub, identity, mdns, noise, tcp, yamux,
