@@ -2,45 +2,8 @@
 name = "qc-node"
 version = "0.1.0"
 edition = "2021"
-authors = ["quantumchain-core"]
-description = "Quantum Chain Node - Post-quantum secure blockchain with Dilithium3"
-license = "Apache-2.0"
-repository = "https://github.com/quantumchain-core/qc-node"
 
 [dependencies]
-# M1: Dilithium3 post-quantum crypto for quantum-resistant signatures
 pqcrypto-dilithium = "0.5"
 pqcrypto-traits = "0.3"
 sha3 = "0.10"
-
-# Utils
-hex = "0.4"
-serde = { version = "1.0", features = ["derive"] }
-anyhow = "1.0"
-
-# M2: P2P networking - fixes libp2p/tokio/log errors
-libp2p = { version = "0.53", features = ["tcp", "noise", "yamux", "macros", "mdns"] }
-tokio = { version = "1", features = ["full"] }
-log = "0.4"
-env_logger = "0.10"
-
-# M3: Blockchain
-futures = "0.3"
-
-[dev-dependencies]
-# For tests
-tempfile = "3.8"
-tokio-test = "0.4"
-
-[[bin]]
-name = "qc-node"
-path = "src/main.rs"
-
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-strip = true
-
-[profile.dev]
-opt-level = 1
