@@ -18,9 +18,9 @@ pub async fn new_swarm() -> Result<Swarm<QcBehaviour>, Box<dyn Error>> {
     println!("Local peer id: {peer_id}");
 
     let gossipsub_config = gossipsub::ConfigBuilder::default()
-  .validation_mode(ValidationMode::Strict)
-  .build()
-  .expect("Valid config");
+       .validation_mode(ValidationMode::Strict)
+       .build()
+       .expect("Valid config");
     
     let gossipsub = gossipsub::Behaviour::new(
         MessageAuthenticity::Signed(id_keys.clone()), 
@@ -30,11 +30,12 @@ pub async fn new_swarm() -> Result<Swarm<QcBehaviour>, Box<dyn Error>> {
     let behaviour = QcBehaviour { gossipsub };
 
     let transport = tcp::tokio::Transport::default()
-  .upgrade(upgrade::Version::V1)
-  .authenticate(noise::Config::new(&id_keys)?)
-  .multiplex(yamux::Config::default())
-  .boxed();
+       .upgrade(upgrade::Version::V1)
+       .authenticate(noise::Config::new(&id_keys)?)
+       .multiplex(yamux::Config::default())
+       .boxed();
 
+    // libp2p 0.53: Swarm::new takes 3 args, not 4
     let swarm = Swarm::new(transport, behaviour, peer_id);
 
     Ok(swarm)
@@ -63,4 +64,4 @@ mod m4_tests {
         let peer_id = peer_id_from_pk(&pk);
         assert!(!peer_id.to_string().is_empty());
     }
-}
+            }
