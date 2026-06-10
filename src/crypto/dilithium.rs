@@ -34,7 +34,7 @@ pub fn verify(msg: &[u8], sig: &[u8], pk: &[u8]) -> bool {
 mod m1_tests {
     use super::*;
     
-    #
+    #[test]
     fn m1_keygen_sign_verify() {
         let (pk, sk) = generate_keypair();
         assert_eq!(pk.len(), 1952);
