@@ -112,6 +112,16 @@ pub async fn run_node() -> Result<(), Box<dyn std::error::Error>> {
                         log::info!("Disconnected from {peer_id}: {cause:?}");
                     }
                     _ => {}
+                    #[cfg(test)]
+mod m2_tests {
+    use super::*;
+    use tokio;
+    #[tokio::test]
+    async fn m2_swarm_builds() {
+        let swarm = new_swarm().await;
+        assert!(swarm.is_ok());
+    }
+                        }
                 }
             }
         }
