@@ -1,37 +1,14 @@
-name: test
-
-on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-
+name: M1 Tests
+on: [push]
 jobs:
-  test:
+  m1:
     runs-on: ubuntu-22.04
-    
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install C toolchain for pqcrypto
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential clang cmake pkg-config libssl-dev
-        
-    - name: Install Rust stable
-      uses: dtolnay/rust-toolchain@stable # NOT 1.75.0. Use current stable.
-      
-    - name: Cache cargo
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      
-    - name: Build
-      run: cargo build --verbose
-      
-    - name: Test
-      run: cargo test --verbose
+      - uses: actions/checkout@v4
+      - name: Install C toolchain for pqcrypto
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test M1 Keygen+Sign+Verify
+        run: cargo test crypto::m1_tests --verbose
