@@ -1,4 +1,4 @@
-use crate::crypto;
+use crate::crypto; // Use your M1 module directly
 use sha3::{Digest, Sha3_256};
 
 pub struct Block {
@@ -6,8 +6,8 @@ pub struct Block {
     pub prev_hash: [u8; 32],
     pub timestamp: u64,
     pub payload: Vec<u8>,
-    pub pubkey: Vec<u8>,
-    pub signature: Vec<u8>,
+    pub pubkey: Vec<u8>, // M1 Dilithium5 pk = 1952 bytes
+    pub signature: Vec<u8>, // M1 Dilithium5 sig = 4595 bytes
 }
 
 impl Block {
@@ -22,22 +22,22 @@ impl Block {
 
     pub fn verify_sig(&self) -> bool {
         let hash = self.hash();
-        crypto::verify(&hash, &self.signature, &self.pubkey)
+        crypto::verify(&hash, &self.signature, &self.pubkey) // M1 verify
     }
 }
 
 pub fn genesis_block() -> Block {
-    let (pk, sk) = crypto::generate_keypair();
+    let (pk, sk) = crypto::generate_keypair(); // M1 returns (Vec<u8>, Vec<u8>)
     let mut block = Block {
         height: 0,
         prev_hash: [0u8; 32],
         timestamp: 1717910400,
         payload: b"QuantumChain Genesis".to_vec(),
-        pubkey: pk,
+        pubkey: pk, // This is 1952 bytes from M1
         signature: vec![],
     };
     let hash = block.hash();
-    block.signature = crypto::sign(&sk, &hash);
+    block.signature = crypto::sign(&sk, &hash); // sk is 4032 bytes from M1
     block
 }
 
@@ -49,13 +49,15 @@ mod m3_tests {
     fn m3_genesis_validates() {
         let genesis = genesis_block();
         assert_eq!(genesis.height, 0);
+        assert_eq!(genesis.pubkey.len(), 1952); // Dilithium5 pk
+        assert_eq!(genesis.signature.len(), 4595); // Dilithium5 sig
         assert!(genesis.verify_sig());
     }
 
     #[test]
     fn m3_bad_sig_fails() {
         let mut genesis = genesis_block();
-        genesis.signature[0] ^= 1;
+        genesis.signature[0] ^= 1; // flip 1 bit
         assert!(!genesis.verify_sig());
     }
-    }
+}
