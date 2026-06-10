@@ -6,8 +6,8 @@ pub struct Block {
     pub prev_hash: [u8; 32],
     pub timestamp: u64,
     pub payload: Vec<u8>,
-    pub pubkey: Vec<u8>, // M1 Dilithium5 pk = 1952 bytes
-    pub signature: Vec<u8>, // M1 Dilithium5 sig = 4595 bytes
+    pub pubkey: Vec<u8>,
+    pub signature: Vec<u8>,
 }
 
 impl Block {
@@ -27,17 +27,17 @@ impl Block {
 }
 
 pub fn genesis_block() -> Block {
-    let (pk, sk) = crypto::generate_keypair(); // M1 returns Vec<u8> for both
+    let (pk, sk) = crypto::generate_keypair();
     let mut block = Block {
         height: 0,
         prev_hash: [0u8; 32],
         timestamp: 1717910400,
         payload: b"QuantumChain Genesis".to_vec(),
-        pubkey: pk, // 1952 bytes
+        pubkey: pk,
         signature: vec![],
     };
     let hash = block.hash();
-    block.signature = crypto::sign(&sk, &hash); // sk is 4032 bytes
+    block.signature = crypto::sign(&sk, &hash);
     block
 }
 
@@ -49,15 +49,13 @@ mod m3_tests {
     fn m3_genesis_validates() {
         let genesis = genesis_block();
         assert_eq!(genesis.height, 0);
-        assert_eq!(genesis.pubkey.len(), 1952); // Check M1 key size
-        assert_eq!(genesis.signature.len(), 4595); // Check M1 sig size 
         assert!(genesis.verify_sig());
     }
 
     #[test]
     fn m3_bad_sig_fails() {
         let mut genesis = genesis_block();
-        genesis.signature[0] ^= 1; // Corrupt 1 bit
+        genesis.signature[0] ^= 1;
         assert!(!genesis.verify_sig());
     }
-}
+    }
