@@ -73,3 +73,19 @@ mod tests {
         assert_eq!(sk.0.len(), 4000);
     }
 }  
+#[cfg(test)]
+mod m1_tests {
+    use super::*;
+    #
+    fn m1_still_works() {
+        let (pk, sk) = generate_keypair();
+        assert_eq!(pk.len(), 1952);
+        assert_eq!(sk.len(), 4000);
+        let msg = b"M1 must never break";
+        let sig = sign(msg, &sk);
+        assert!(verify(msg, &sig, &pk));
+        let mut bad_msg = msg.to_vec();
+        bad_msg[0] ^= 1;
+        assert!(!verify(&bad_msg, &sig, &pk));
+    }
+}
