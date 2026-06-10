@@ -1,7 +1,7 @@
-use libp2p::{gossipsub, swarm::NetworkBehaviour, PeerId, Swarm, Transport};
+swarm libp2p::{gossipsub, swarm::NetworkBehaviour, PeerId, Swarm, Transport};
 use libp2p::identity::Keypair;
 use libp2p::gossipsub::{MessageAuthenticity, ValidationMode};
-use libp2p::swarm::SwarmBuilder;
+use libp2p::SwarmBuilder;
 use libp2p::core::upgrade;
 use libp2p::noise;
 use libp2p::tcp;
