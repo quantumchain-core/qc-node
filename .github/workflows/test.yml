@@ -16,3 +16,13 @@ jobs:
         run: cargo test net::m2_tests --verbose
       - name: Test M3 Chain
         run: cargo test chain::m3_tests --verbose
+  Test M4 P2P:
+    runs-on: ubuntu-latest
+    needs: Test M3 Chain
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install C toolchain
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test M4 P2P
+        run: cargo test --lib net::m4_tests
