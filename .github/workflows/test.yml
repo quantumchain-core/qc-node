@@ -1,4 +1,4 @@
-name: Test M1+M2
+name: Test M1+M2+M3
 on: [push]
 jobs:
   test:
@@ -12,6 +12,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Test M1 Crypto
         run: cargo test crypto::m1_tests --verbose
-      - name: Test M2 Network 
+      - name: Test M2 Network
         run: cargo test net::m2_tests --verbose
- 
+      - name: Test M3 Chain
+        run: cargo test chain::m3_tests --verbose
