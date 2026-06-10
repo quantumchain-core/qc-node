@@ -14,6 +14,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Force libp2p 0.53
         run: cargo update -p libp2p --precise 0.53.0
+      - name: Verify libp2p version
+        run: cargo tree -i libp2p | grep libp2p
       - name: Test M1 Crypto
         run: cargo test crypto::m1_tests --verbose
       - name: Test M2 Network
