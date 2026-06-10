@@ -1,4 +1,6 @@
-use libp2p::{gossipsub, noise, swarm::NetworkBehaviour, tcp, yamux, PeerId};
+use libp2p::{gossipsub, swarm::NetworkBehaviour, PeerId};
+use libp2p::identity::Keypair;
+use std::error::Error;       seelibp2p::{gossipsub, noise, swarm::NetworkBehaviour, tcp, yamux, PeerId};
 use libp2p::identity::Keypair;
 use std::error::Error;
 
