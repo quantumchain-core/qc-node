@@ -17,13 +17,12 @@ pub async fn start_swarm() -> Result<(), Box<dyn Error>> {
     let keypair = Keypair::generate_ed25519();
     
     let mut swarm = libp2p::SwarmBuilder::with_existing_identity(keypair)
-    .with_tokio()
-    .with_tcp(
+       .with_tcp(
             tcp::Config::default(),
             noise::Config::new,
             yamux::Config::default,
         )?
-    .with_behaviour(|key| {
+       .with_behaviour(|key| {
             let gossipsub_config = gossipsub::Config::default();
             let gossipsub = gossipsub::Behaviour::new(
                 gossipsub::MessageAuthenticity::Signed(key.clone()),
@@ -31,7 +30,7 @@ pub async fn start_swarm() -> Result<(), Box<dyn Error>> {
             ).unwrap();
             QcBehaviour { gossipsub }
         })?
-    .build();
+       .build();
 
     let topic = gossipsub::IdentTopic::new("qc-blocks");
     swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
@@ -49,4 +48,4 @@ mod m2_tests {
         let peer_id = peer_id_from_pk(&pk);
         assert!(!peer_id.to_string().is_empty());
     }
-        }
+}
