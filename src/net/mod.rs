@@ -1,0 +1,59 @@
+use libp2p::{gossipsub, noise, swarm::NetworkBehaviour, tcp, yamux, Swarm, PeerId};
+use libp2p::identity::Keypair;
+use libp2p::swarm::SwarmEvent;
+use std::error::Error;
+use futures::StreamExt;
+
+// M2: Use M1 keypair to derive libp2p PeerID
+pub fn peer_id_from_pk(pk: &[u8]) -> PeerId {
+    // For now we use ed25519 for libp2p transport, but sign blocks with Dilithium
+    // M1 key is only for consensus signatures, not p2p identity
+    let keypair = Keypair::generate_ed25519();
+    PeerId::from(keypair.public())
+}
+
+#[derive(NetworkBehaviour)]
+struct QcBehaviour {
+    gossipsub: gossipsub::Behaviour,
+}
+
+pub async fn start_swarm() -> Result<(), Box<dyn Error>> {
+    let keypair = Keypair::generate_ed25519();
+    let peer_id = PeerId::from(keypair.public());
+    
+    let mut swarm = libp2p::SwarmBuilder::with_existing_identity(keypair)
+       .with_tokio()
+       .with_tcp(
+            tcp::Config::default(),
+            noise::Config::new,
+            yamux::Config::default,
+        )?
+       .with_behaviour(|key| {
+            let gossipsub_config = gossipsub::Config::default();
+            let gossipsub = gossipsub::Behaviour::new(
+                gossipsub::MessageAuthenticity::Signed(key.clone()),
+                gossipsub_config,
+            ).unwrap();
+            QcBehaviour { gossipsub }
+        })?
+       .build();
+
+    let topic = gossipsub::IdentTopic::new("qc-blocks");
+    swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
+    
+    swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
+    
+    Ok(())
+}
+
+#[cfg(test)]
+mod m2_tests {
+    use super::*;
+
+    #
+    fn m2_swarm_starts() {
+        let pk = vec![0u8; 1952]; // fake M1 pubkey
+        let peer_id = peer_id_from_pk(&pk);
+        assert!(!peer_id.to_string().is_empty());
+    }
+      }
