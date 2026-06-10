@@ -50,7 +50,7 @@ pub async fn start_swarm() -> Result<(), Box<dyn Error>> {
 mod m2_tests {
     use super::*;
 
-    #
+    #[test]
     fn m2_swarm_starts() {
         let pk = vec![0u8; 1952]; // fake M1 pubkey
         let peer_id = peer_id_from_pk(&pk);
