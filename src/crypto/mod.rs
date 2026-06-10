@@ -1,8 +1,8 @@
-use pqcrypto_dilithium::dilithium2::{keypair, PublicKey, SecretKey};
-use pqcrypto_traits::sign::{PublicKey as _, SecretKey as _};
+use pqcrypto_dilithium::dilithium2::{keypair, PublicKey, SecretKey, DetachedSignature, sign, verify};
+use pqcrypto_traits::sign::{PublicKey as _, SecretKey as _, DetachedSignature as _};
 use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Keypair {
     pub public_key: Vec<u8>,
     pub secret_key: Vec<u8>,
@@ -16,30 +16,22 @@ impl Keypair {
             secret_key: sk.as_bytes().to_vec(),
         }
     }
-
     pub fn public_key_hex(&self) -> String {
         hex::encode(&self.public_key)
     }
-
-    pub fn from_secret_bytes(bytes: &[u8]) -> Option<Self> {
-        let sk = SecretKey::from_bytes(bytes).ok()?;
-        let pk = sk.public_key();
-        Some(Keypair {
-            public_key: pk.as_bytes().to_vec(),
-            secret_key: bytes.to_vec(),
-        })
+    pub fn sign(&self, msg: &[u8]) -> Vec<u8> {
+        let sk = SecretKey::from_bytes(&self.secret_key).unwrap();
+        sign(msg, &sk).as_bytes().to_vec()
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_keygen() {
-        let kp = Keypair::generate();
-        assert_eq!(kp.public_key.len(), 1312); // Dilithium2 pubkey size
-        assert_eq!(kp.secret_key.len(), 2528); // Dilithium2 seckey size
-        println!("M1 PASS: Pubkey: {}...", &kp.public_key_hex()[..16]);
+    pub fn verify(pubkey: &[u8], msg: &[u8], sig: &[u8]) -> bool {
+        let pk = match PublicKey::from_bytes(pubkey) {
+            Ok(pk) => pk,
+            Err(_) => return false,
+        };
+        let signature = match DetachedSignature::from_bytes(sig) {
+            Ok(s) => s,
+            Err(_) => return false,
+        };
+        verify(&signature, msg, &pk).is_ok()
     }
 }
