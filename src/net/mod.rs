@@ -1,8 +1,7 @@
-use libp2p::futures::StreamExt;
-use libp2p::identity::Keypair;
-use libp2p::swarm::{NetworkBehaviour, SwarmBuilder};
-use libp2p::{gossipsub, noise, tcp, yamux, PeerId, Transport};
+use libp2p::swarm::NetworkBehaviour;
+use libp2p::{gossipsub, noise, tcp, yamux, PeerId, SwarmBuilder};
 use libp2p::gossipsub::{IdentTopic, MessageAuthenticity, ValidationMode};
+use libp2p::identity::Keypair;
 use std::error::Error;
 
 #[derive(NetworkBehaviour)]
@@ -15,33 +14,33 @@ pub fn peer_id_from_pk(_pk: &[u8]) -> PeerId {
     PeerId::from(keypair.public())
 }
 
-pub async fn new_swarm() -> Result<libp2p::swarm::Swarm<QcBehaviour>, Box<dyn Error>> {
+pub async fn new_swarm() -> Result<libp2p::Swarm<QcBehaviour>, Box<dyn Error>> {
     let id_keys = Keypair::generate_ed25519();
-    let peer_id = PeerId::from(id_keys.public());
 
     let gossipsub_config = gossipsub::ConfigBuilder::default()
-.validation_mode(ValidationMode::Strict)
-.build()?;
+        .validation_mode(ValidationMode::Strict)
+        .build()
+        .map_err(|e| Box::<dyn Error>::from(e))?;
 
-    let mut gossipsub = gossipsub::Behaviour::new(
+    let mut gossipsub_behaviour = gossipsub::Behaviour::new(
         MessageAuthenticity::Signed(id_keys.clone()),
-        gossipsub_config
+        gossipsub_config,
     )?;
 
     let topic = IdentTopic::new("qc-blocks");
-    gossipsub.subscribe(&topic)?;
+    gossipsub_behaviour.subscribe(&topic)?;
 
-    let behaviour = QcBehaviour { gossipsub };
-
-    let tcp_transport = tcp::tokio::Transport::new(tcp::Config::default().nodelay(true));
-    let transport = tcp_transport
-.upgrade(libp2p::core::upgrade::Version::V1)
-.authenticate(noise::Config::new(&id_keys)?)
-.multiplex(yamux::Config::default())
-.boxed();
-
-    // SwarmBuilder is the stable API for 0.53.0. new_ephemeral is deprecated/removed.
-    let swarm = SwarmBuilder::with_tokio_executor(transport, behaviour, peer_id).build();
+    let swarm = SwarmBuilder::with_existing_identity(id_keys)
+        .with_tokio()
+        .with_tcp(
+            tcp::Config::default().nodelay(true),
+            noise::Config::new,
+            yamux::Config::default,
+        )?
+        .with_behaviour(|_| QcBehaviour {
+            gossipsub: gossipsub_behaviour,
+        })?
+        .build();
 
     Ok(swarm)
 }
@@ -57,11 +56,9 @@ mod m2_tests {
         assert!(!peer_id.to_string().is_empty());
     }
 
-    #[test]
-    fn m2_swarm_builds_and_subscribes() {
-        tokio::runtime::Runtime::new().unwrap().block_on(async {
-            let swarm = new_swarm().await;
-            assert!(swarm.is_ok());
-        });
+    #[tokio::test]
+    async fn m2_swarm_builds_and_subscribes() {
+        let swarm = new_swarm().await;
+        assert!(swarm.is_ok());
     }
 }
