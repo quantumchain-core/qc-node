@@ -1,4 +1,4 @@
-name: Test M1+M2+M3+M4
+name: Test M1+M2+M3+M4+M5
 on: [push, pull_request]
 
 jobs:
@@ -32,3 +32,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Test M4 Mempool
         run: cargo test mempool::tests --verbose
+
+  test_m5_consensus:
+    name: Test M5 Consensus
+    runs-on: ubuntu-22.04
+    needs: test_m4_mempool
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test M5 Consensus
+        run: cargo test consensus::tests --verbose
