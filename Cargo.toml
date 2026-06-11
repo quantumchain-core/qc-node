@@ -8,15 +8,8 @@ pqcrypto-dilithium = "0.5"
 pqcrypto-traits = "0.3"
 sha3 = "0.10"
 
-# Pin ALL libp2p crates to matching versions. This is the only way.
-libp2p = { version = "=0.53.0", features = ["gossipsub", "tcp", "noise", "yamux", "tokio", "macros"] }
-libp2p-identity = "=0.2.7"
-libp2p-swarm = "=0.53.0"
-libp2p-gossipsub = "=0.46.1"
-libp2p-core = "=0.42.0"
-libp2p-noise = "=0.44.0"
-libp2p-yamux = "=0.45.1"
-libp2p-tcp = "=0.42.0"
+# Only specify the main libp2p crate. Let it pull the right subcrates.
+libp2p = { version = "0.53.0", features = ["gossipsub", "tcp", "noise", "yamux", "tokio", "macros"] }
 
 tokio = { version = "1.35", features = ["full"] }
 futures = "0.3"
