@@ -1,10 +1,11 @@
 use libp2p::identity::Keypair;
-use libp2p::swarm::{NetworkBehaviour, Swarm};
+use libp2p::swarm::Swarm;
 use libp2p::{gossipsub, PeerId};
 use libp2p::gossipsub::{IdentTopic, MessageAuthenticity, ValidationMode};
+use libp2p::swarm::NetworkBehaviour; // Import the trait
 use std::error::Error;
 
-// This derive macro only works if you have features = ["macros"] in Cargo.toml
+// This derive ONLY works with features = ["macros"] in Cargo.toml
 #[derive(NetworkBehaviour)]
 pub struct QcBehaviour {
     pub gossipsub: gossipsub::Behaviour,
@@ -19,8 +20,8 @@ pub async fn new_swarm() -> Result<Swarm<QcBehaviour>, Box<dyn Error>> {
     let id_keys = Keypair::generate_ed25519();
 
     let gossipsub_config = gossipsub::ConfigBuilder::default()
-  .validation_mode(ValidationMode::Strict)
-  .build()?;
+ .validation_mode(ValidationMode::Strict)
+ .build()?;
 
     let mut gossipsub = gossipsub::Behaviour::new(
         MessageAuthenticity::Signed(id_keys.clone()),
@@ -31,7 +32,7 @@ pub async fn new_swarm() -> Result<Swarm<QcBehaviour>, Box<dyn Error>> {
     gossipsub.subscribe(&topic)?;
 
     let behaviour = QcBehaviour { gossipsub };
-    // Swarm::new_ephemeral exists in libp2p-swarm 0.44.0 which ships with libp2p 0.53.0
+    // This exists in libp2p-swarm 0.44.2 BUT only with "tokio" feature
     let swarm = Swarm::new_ephemeral(|_| behaviour);
     Ok(swarm)
 }
