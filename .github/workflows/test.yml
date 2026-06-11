@@ -1,5 +1,5 @@
-name: Test M1+M2+M3
-on: [push]
+name: Test M1+M2+M3+M4
+on: [push, pull_request]
 
 jobs:
   test_m1_m2_m3:
@@ -22,3 +22,13 @@ jobs:
         run: cargo test net::m2_tests --verbose
       - name: Test M3 Chain
         run: cargo test chain::m3_tests --verbose
+
+  test_m4_mempool:
+    name: Test M4 Mempool
+    runs-on: ubuntu-22.04
+    needs: test_m1_m2_m3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test M4 Mempool
+        run: cargo test mempool::tests --verbose
