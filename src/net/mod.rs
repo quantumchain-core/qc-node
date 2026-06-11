@@ -1,7 +1,6 @@
 use libp2p::{gossipsub, swarm::NetworkBehaviour, PeerId, Swarm};
 use libp2p::identity::Keypair;
 use libp2p::gossipsub::{IdentTopic, MessageAuthenticity, ValidationMode};
-use libp2p::swarm::SwarmEvent;
 use std::error::Error;
 
 #[derive(NetworkBehaviour)]
@@ -10,7 +9,6 @@ pub struct QcBehaviour {
 }
 
 pub fn peer_id_from_pk(_pk: &[u8]) -> PeerId {
-    // M2: Generate libp2p PeerID. M1 Dilithium key used for blocks only.
     let keypair = Keypair::generate_ed25519();
     PeerId::from(keypair.public())
 }
@@ -33,6 +31,8 @@ pub async fn new_swarm() -> Result<Swarm<QcBehaviour>, Box<dyn Error>> {
     gossipsub.subscribe(&topic)?;
 
     let behaviour = QcBehaviour { gossipsub };
+    
+    // This is the 0.53.0 API - no SwarmBuilder needed
     let swarm = Swarm::new_ephemeral(|_| behaviour);
 
     Ok(swarm)
@@ -44,7 +44,7 @@ mod m2_tests {
 
     #[test]
     fn m2_peer_id_works() {
-        let pk = vec![0u8; 1952]; // fake M1 pubkey
+        let pk = vec![0u8; 1952];
         let peer_id = peer_id_from_pk(&pk);
         assert!(!peer_id.to_string().is_empty());
     }
