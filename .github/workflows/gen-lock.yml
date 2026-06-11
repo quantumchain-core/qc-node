@@ -1,0 +1,20 @@
+name: Gen Lock 0.53
+on: workflow_dispatch
+jobs:
+  lock:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Force libp2p 0.53
+        run: |
+          cargo update -p libp2p --precise 0.53.0
+          cargo update -p libp2p-swarm --precise 0.53.0
+          cargo tree -i libp2p
+      - name: Commit lockfile
+        run: |
+          git config user.name github-actions
+          git config user.email actions@github.com
+          git add Cargo.lock
+          git commit -m "M2: Lock libp2p to 0.53.0"
+          git push
