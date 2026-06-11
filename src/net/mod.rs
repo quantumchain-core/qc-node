@@ -1,6 +1,13 @@
-use libp2p::{gossipsub, noise, swarm::NetworkBehaviour, tcp, yamux, PeerId};
+use libp2p::{gossipsub, swarm::NetworkBehaviour, PeerId, Swarm};
 use libp2p::identity::Keypair;
+use libp2p::gossipsub::{IdentTopic, MessageAuthenticity, ValidationMode};
+use libp2p::swarm::SwarmEvent;
 use std::error::Error;
+
+#[derive(NetworkBehaviour)]
+pub struct QcBehaviour {
+    pub gossipsub: gossipsub::Behaviour,
+}
 
 pub fn peer_id_from_pk(_pk: &[u8]) -> PeerId {
     // M2: Generate libp2p PeerID. M1 Dilithium key used for blocks only.
@@ -8,18 +15,27 @@ pub fn peer_id_from_pk(_pk: &[u8]) -> PeerId {
     PeerId::from(keypair.public())
 }
 
-#[derive(NetworkBehaviour)]
-struct QcBehaviour {
-    gossipsub: gossipsub::Behaviour,
-}
+pub async fn new_swarm() -> Result<Swarm<QcBehaviour>, Box<dyn Error>> {
+    let id_keys = Keypair::generate_ed25519();
+    let peer_id = PeerId::from(id_keys.public());
 
-pub fn new_swarm() -> Result<PeerId, Box<dyn Error>> {
-    let keypair = Keypair::generate_ed25519();
-    let peer_id = PeerId::from(keypair.public());
+    let gossipsub_config = gossipsub::ConfigBuilder::default()
+       .validation_mode(ValidationMode::Strict)
+       .build()?;
     
-    // M2: Just prove we can build the behaviour. Full swarm in M3.
-    let _gossipsub_config = gossipsub::Config::default();
-    Ok(peer_id)
+    let mut gossipsub = gossipsub::Behaviour::new(
+        MessageAuthenticity::Signed(id_keys), 
+        gossipsub_config
+    )?;
+
+    // M2: Prove we can subscribe to a topic
+    let topic = IdentTopic::new("qc-blocks");
+    gossipsub.subscribe(&topic)?;
+
+    let behaviour = QcBehaviour { gossipsub };
+    let swarm = Swarm::new_ephemeral(|_| behaviour);
+
+    Ok(swarm)
 }
 
 #[cfg(test)]
@@ -34,8 +50,12 @@ mod m2_tests {
     }
 
     #[test]
-    fn m2_swarm_config_builds() {
-        let result = new_swarm();
-        assert!(result.is_ok());
+    fn m2_swarm_builds_and_subscribes() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let swarm = new_swarm().await;
+            assert!(swarm.is_ok());
+            let swarm = swarm.unwrap();
+            assert_eq!(swarm.behaviour().gossipsub.topics().count(), 1);
+        });
     }
 }
