@@ -1,11 +1,10 @@
+use libp2p::futures::StreamExt;
 use libp2p::identity::Keypair;
-use libp2p::swarm::Swarm;
-use libp2p::{gossipsub, PeerId};
+use libp2p::swarm::{NetworkBehaviour, SwarmBuilder};
+use libp2p::{gossipsub, noise, tcp, yamux, PeerId, Transport};
 use libp2p::gossipsub::{IdentTopic, MessageAuthenticity, ValidationMode};
-use libp2p::swarm::NetworkBehaviour; // Import the trait
 use std::error::Error;
 
-// This derive ONLY works with features = ["macros"] in Cargo.toml
 #[derive(NetworkBehaviour)]
 pub struct QcBehaviour {
     pub gossipsub: gossipsub::Behaviour,
@@ -16,12 +15,13 @@ pub fn peer_id_from_pk(_pk: &[u8]) -> PeerId {
     PeerId::from(keypair.public())
 }
 
-pub async fn new_swarm() -> Result<Swarm<QcBehaviour>, Box<dyn Error>> {
+pub async fn new_swarm() -> Result<libp2p::swarm::Swarm<QcBehaviour>, Box<dyn Error>> {
     let id_keys = Keypair::generate_ed25519();
+    let peer_id = PeerId::from(id_keys.public());
 
     let gossipsub_config = gossipsub::ConfigBuilder::default()
- .validation_mode(ValidationMode::Strict)
- .build()?;
+.validation_mode(ValidationMode::Strict)
+.build()?;
 
     let mut gossipsub = gossipsub::Behaviour::new(
         MessageAuthenticity::Signed(id_keys.clone()),
@@ -32,8 +32,17 @@ pub async fn new_swarm() -> Result<Swarm<QcBehaviour>, Box<dyn Error>> {
     gossipsub.subscribe(&topic)?;
 
     let behaviour = QcBehaviour { gossipsub };
-    // This exists in libp2p-swarm 0.44.2 BUT only with "tokio" feature
-    let swarm = Swarm::new_ephemeral(|_| behaviour);
+
+    let tcp_transport = tcp::tokio::Transport::new(tcp::Config::default().nodelay(true));
+    let transport = tcp_transport
+.upgrade(libp2p::core::upgrade::Version::V1)
+.authenticate(noise::Config::new(&id_keys)?)
+.multiplex(yamux::Config::default())
+.boxed();
+
+    // SwarmBuilder is the stable API for 0.53.0. new_ephemeral is deprecated/removed.
+    let swarm = SwarmBuilder::with_tokio_executor(transport, behaviour, peer_id).build();
+
     Ok(swarm)
 }
 
@@ -55,4 +64,4 @@ mod m2_tests {
             assert!(swarm.is_ok());
         });
     }
-    }
+}
