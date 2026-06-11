@@ -16,3 +16,9 @@ serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]
 tokio = { version = "1.35", features = ["macros", "rt-multi-thread"] }
+
+[patch.crates-io]
+libp2p = { version = "0.53.0" }
+libp2p-swarm = { version = "0.53.0" }
+libp2p-gossipsub = { version = "0.46.1" }
+libp2p-identity = { version = "0.2.7" }
