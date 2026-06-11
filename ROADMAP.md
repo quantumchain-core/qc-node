@@ -138,6 +138,11 @@
 5. E2E tests: spin up 3 nodes, send tx, confirm finality
 
 **Depends on:** All M1-M9
+## M11: Mobile Wallet APK `v0.1.0-m11`
+**Location:** `mobile/`
+**Scope:** Android/iOS app. Rust core + Tauri/Flutter UI. Light client only.
+**Depends on:** M1, M7, M9
+**Deliverable:** `qc-wallet.apk` on GitHub Releases
 
 ---
 
