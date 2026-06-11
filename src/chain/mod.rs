@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::mempool::Transaction;
+pub use crate::mempool::Transaction;
 
 /// 32-byte hash
 pub type Hash = [u8; 32];
