@@ -2,6 +2,7 @@
 // QTC - M4: Transaction Pool
 // Per whitepaper: EIP-1559 style fees (base fee + priority fee), Dilithium2 signatures
 
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -25,7 +26,7 @@ pub type Address = [u8; 32];
 
 /// A minimal signed transaction.
 /// Extend with contract call data when the VM lands (post-M10).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Transaction {
     pub hash: TxHash,
     pub from: Address,
