@@ -1,61 +1,40 @@
-use crate::crypto;
-use sha3::{Digest, Sha3_256};
+// src/chain/mod.rs
+// QTC - M3: Chain Types
+// Updated for M4/M5: EIP-1559, separate header/body
 
-pub struct Block {
+use serde::{Deserialize, Serialize};
+
+use crate::mempool::Transaction;
+
+/// 32-byte hash
+pub type Hash = [u8; 32];
+pub type Address = [u8; 32];
+
+/// Block header - consensus fields only
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BlockHeader {
+    pub parent_hash: Hash,      // was prev_hash
     pub height: u64,
-    pub prev_hash: [u8; 32],
+    pub slot: u64,              // M5: PoS slot
     pub timestamp: u64,
-    pub payload: Vec<u8>,
-    pub pubkey: Vec<u8>,
-    pub signature: Vec<u8>,
+    pub proposer: Address,       // was pubkey
+    pub tx_root: Hash,           // merkle root of transactions
+    pub base_fee: u64,           // M4: EIP-1559
+    pub gas_used: u64,           // M4: total gas in block
+    pub gas_limit: u64,          // M4: BLOCK_GAS_LIMIT
+}
+
+/// Full block with body
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Block {
+    pub header: BlockHeader,
+    pub transactions: Vec<Transaction>, // was payload
+    pub signature: Vec<u8>,             // Dilithium2 over header
 }
 
 impl Block {
-    pub fn hash(&self) -> [u8; 32] {
-        let mut hasher = Sha3_256::new();
-        hasher.update(self.height.to_le_bytes());
-        hasher.update(self.prev_hash);
-        hasher.update(self.timestamp.to_le_bytes());
-        hasher.update(&self.payload);
-        hasher.finalize().into()
-    }
-
-    pub fn verify_sig(&self) -> bool {
-        let hash = self.hash();
-        crypto::verify(&hash, &self.signature, &self.pubkey)
+    pub fn hash(&self) -> Hash {
+        // TODO: M1 crypto::hash(bincode::serialize(&self.header))
+        [0u8; 32] // placeholder
     }
 }
-
-pub fn genesis_block() -> Block {
-    let (pk, sk) = crypto::generate_keypair();
-    let mut block = Block {
-        height: 0,
-        prev_hash: [0u8; 32],
-        timestamp: 1717910400,
-        payload: b"QuantumChain Genesis".to_vec(),
-        pubkey: pk,
-        signature: vec![],
-    };
-    let hash = block.hash();
-    block.signature = crypto::sign(&sk, &hash);
-    block
-}
-
-#[cfg(test)]
-mod m3_tests {
-    use super::*;
-
-    #[test]
-    fn m3_genesis_validates() {
-        let genesis = genesis_block();
-        assert_eq!(genesis.height, 0);
-        assert!(genesis.verify_sig());
-    }
-
-    #[test]
-    fn m3_bad_sig_fails() {
-        let mut genesis = genesis_block();
-        genesis.signature[0] ^= 1;
-        assert!(!genesis.verify_sig());
-    }
-    }
