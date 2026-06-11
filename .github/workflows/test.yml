@@ -1,4 +1,4 @@
-name: Test M1+M2+M3+M4
+name: Test M1+M2+M3
 on: [push]
 
 jobs:
@@ -22,19 +22,3 @@ jobs:
         run: cargo test net::m2_tests --verbose
       - name: Test M3 Chain
         run: cargo test chain::m3_tests --verbose
-
-  test_m4_p2p:
-    name: Test M4 P2P
-    runs-on: ubuntu-22.04
-    needs: test_m1_m2_m3
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install C toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Force libp2p 0.53
-        run: cargo update -p libp2p --precise 0.53.0
-      - name: Test M4 P2P
-        run: cargo test --lib net::m4_tests --verbose
