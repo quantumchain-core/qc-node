@@ -4,7 +4,8 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::chain::{Block, BlockHeader, Transaction};
+use crate::chain::{Block, BlockHeader};
+use crate::mempool::Transaction;
 use crate::mempool::Mempool;
 use crate::crypto; // M1 - Dilithium2
 
