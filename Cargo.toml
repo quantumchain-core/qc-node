@@ -23,3 +23,4 @@ sled = "0.34" # ADD THIS - disk storage for blocks/state
 
 [dev-dependencies]
 tokio = { version = "1.35", features = ["macros", "rt-multi-thread"] }
+tempfile = "3.8" # ADD THIS - gives each test a unique sled DB path for CI
