@@ -31,11 +31,11 @@ mod m1_tests {
     #[test]
     fn m1_keygen_sign_verify() {
         let (pk, sk) = generate_keypair();
-        assert_eq!(pk.len(), 2592);
-        assert_eq!(sk.len(), 4896); // D5-AES
+        assert_eq!(pk.len(), 2592); // D5 pk
+        assert_eq!(sk.len(), 4864); // FIXED: D5 sk non-AES
         let msg = b"test";
         let sig = sign(&sk, msg);
-        assert_eq!(sig.len(), 4595);
+        assert_eq!(sig.len(), 4595); // D5 sig
         assert!(verify(msg, &sig, &pk));
     }
 
