@@ -1,6 +1,6 @@
 // src/crypto/dilithium.rs
 // QTC M1 — Post-Quantum Signatures
-// Temporary: m1_print_sizes will reveal exact byte sizes for this platform
+// Dilithium2: pk=1312 sk=2560 sig=2420
 
 use pqcrypto_dilithium::dilithium2::*;
 use pqcrypto_traits::sign::{DetachedSignature, PublicKey, SecretKey};
@@ -32,18 +32,13 @@ mod m1_tests {
     use super::*;
 
     #[test]
-    fn m1_print_sizes() {
-        let (pk, sk) = generate_keypair();
-        let msg = b"test";
-        let sig = sign(&sk, msg);
-        panic!("pk={} sk={} sig={}", pk.len(), sk.len(), sig.len());
-    }
-
-    #[test]
     fn m1_keygen_sign_verify() {
         let (pk, sk) = generate_keypair();
+        assert_eq!(pk.len(), 1312, "Dilithium2 pk should be 1312 bytes");
+        assert_eq!(sk.len(), 2560, "Dilithium2 sk should be 2560 bytes");
         let msg = b"qtc test message";
         let sig = sign(&sk, msg);
+        assert_eq!(sig.len(), 2420, "Dilithium2 sig should be 2420 bytes");
         assert!(verify(msg, &sig, &pk), "valid sig should verify");
     }
 
