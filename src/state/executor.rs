@@ -1,0 +1,90 @@
+use crate::state::{StateDB, Address, Account};
+use crate::chain::{Block, BlockHeader};
+use crate::mempool::Transaction;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum ExecError {
+    #[error("insufficient balance: have {0}, need {1}")]
+    InsufficientBalance(u128, u128),
+    #[error("nonce mismatch: expected {0}, got {1}")]
+    NonceMismatch(u64, u64),
+    #[error("gas limit exceeded")]
+    GasLimitExceeded,
+    #[error("gas used mismatch")]
+    GasUsedMismatch,
+}
+
+pub struct Executor;
+
+impl Executor {
+    /// M6: Execute a full block. Updates state_db in place.
+    /// Returns total gas used.
+    pub fn execute_block(
+        state: &mut StateDB,
+        block: &Block,
+        coinbase: &Address, // validator who gets fees
+    ) -> Result<u64, ExecError> {
+        let mut total_gas_used = 0u64;
+        let base_fee = block.header.base_fee;
+
+        for tx in &block.transactions {
+            let gas_used = Self::execute_tx(state, tx, base_fee, coinbase)?;
+            total_gas_used += gas_used;
+            
+            if total_gas_used > block.header.gas_limit {
+                return Err(ExecError::GasLimitExceeded);
+            }
+        }
+
+        // Sanity check gas_used matches header
+        if total_gas_used != block.header.gas_used {
+            return Err(ExecError::GasUsedMismatch);
+        }
+
+        Ok(total_gas_used)
+    }
+
+    /// M6: Execute one transaction. Simple balance transfer for now.
+    fn execute_tx(
+        state: &mut StateDB,
+        tx: &Transaction,
+        base_fee: u128,
+        coinbase: &Address,
+    ) -> Result<u64, ExecError> {
+        // 1. Load sender
+        let mut sender = state.get_account(&tx.from);
+        
+        // 2. Check nonce
+        if sender.nonce != tx.nonce {
+            return Err(ExecError::NonceMismatch(sender.nonce, tx.nonce));
+        }
+        
+        // 3. Calculate total cost: value + gas
+        let gas_cost = (tx.gas_limit as u128) * base_fee;
+        let total_cost = tx.value + gas_cost;
+        
+        // 4. Check balance
+        if sender.balance < total_cost {
+            return Err(ExecError::InsufficientBalance(sender.balance, total_cost));
+        }
+
+        // 5. Charge sender
+        sender.balance -= total_cost;
+        sender.nonce += 1;
+        state.set_account(tx.from, sender);
+
+        // 6. Pay recipient
+        let mut recipient = state.get_account(&tx.to);
+        recipient.balance += tx.value;
+        state.set_account(tx.to, recipient);
+
+        // 7. Pay validator the base fee
+        let mut coinbase_acc = state.get_account(coinbase);
+        coinbase_acc.balance += gas_cost;
+        state.set_account(*coinbase, coinbase_acc);
+
+        // M6: Just burn all gas_limit for now. M9 will use actual gas_used.
+        Ok(tx.gas_limit)
+    }
+}
