@@ -1,44 +1,45 @@
-name: Test M1+M2+M3+M4+M5
-on: [push, pull_request]
+name: Test M1+M2+M3+M4+M5+M6
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
-  test_m1_m2_m3:
-    name: Test M1 M2 M3
-    runs-on: ubuntu-22.04
+  build:
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Install C toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Force libp2p 0.53
-        run: cargo update -p libp2p --precise 0.53.0
-      - name: Verify libp2p version
-        run: cargo tree -i libp2p | grep libp2p
-      - name: Test M1 Crypto
-        run: cargo test crypto::m1_tests --verbose
-      - name: Test M2 Network
-        run: cargo test net::m2_tests --verbose
-      - name: Test M3 Chain
-        run: cargo test chain::m3_tests --verbose
-
-  test_m4_mempool:
-    name: Test M4 Mempool
-    runs-on: ubuntu-22.04
-    needs: test_m1_m2_m3
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Test M4 Mempool
-        run: cargo test mempool::tests --verbose
-
-  test_m5_consensus:
-    name: Test M5 Consensus
-    runs-on: ubuntu-22.04
-    needs: test_m4_mempool
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Test M5 Consensus
-        run: cargo test consensus::tests --verbose
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        override: true
+    
+    - name: Cache cargo
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    
+    - name: Build
+      run: cargo build --verbose
+      
+    - name: Run tests
+      run: cargo test --verbose -- --test-threads=1 --nocapture
+      env:
+        QC_DB_PATH: /tmp/qc-node-ci # M6: sled needs a clean writable dir
+    
+    - name: Run clippy
+      run: cargo clippy -- -D warnings
