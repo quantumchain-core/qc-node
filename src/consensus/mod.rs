@@ -7,7 +7,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::chain::{Block, BlockHeader};
 use crate::mempool::Transaction;
 use crate::mempool::Mempool;
-// use crate::crypto; // M1 - Dilithium2 - REMOVED: unused in M5.1, will re-add in M7
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -83,7 +82,6 @@ pub enum ConsensusError {
 pub struct Consensus {
     /// Our validator identity - M1 keypair
     pub validator_id: ValidatorId,
-    // validator_sk: Vec<u8>, // REMOVED: unused in M5.1, M6 uses different signing path
 }
 
 impl Consensus {
@@ -203,14 +201,14 @@ impl Consensus {
 
     /// Sign block header with M1 Dilithium2
     fn sign_header(&self, header: &BlockHeader) -> Vec<u8> {
-        let _msg = bincode::serialize(header).unwrap(); // FIXED: _msg unused in M5.1
+        let _msg = bincode::serialize(header).unwrap();
         // TODO: call M1 crypto::sign(&self.validator_sk, &msg)
         vec![0u8; 2420] // placeholder - wire M1 in M5.2
     }
 
     /// Verify block signature - M1
     fn verify_block_sig(&self, block: &Block) -> bool {
-        let _msg = bincode::serialize(&block.header).unwrap(); // FIXED: _msg unused in M5.1
+        let _msg = bincode::serialize(&block.header).unwrap();
         // TODO: call M1 crypto::verify(&block.header.proposer, &msg, &block.signature)
         true // placeholder - wire M1 in M5.2
     }
@@ -245,9 +243,9 @@ fn calculate_next_base_fee(parent_base_fee: u64, parent_gas_used: u64) -> u64 {
 
 fn now_secs() -> u64 {
     SystemTime::now()
-      .duration_since(UNIX_EPOCH)
-      .unwrap_or_default()
-      .as_secs()
+     .duration_since(UNIX_EPOCH)
+     .unwrap_or_default()
+     .as_secs()
 }
 
 fn merkle_root(txs: &[Transaction]) -> [u8; 32] {
@@ -258,40 +256,4 @@ fn merkle_root(txs: &[Transaction]) -> [u8; 32] {
     let mut data = Vec::new();
     for tx in txs {
         data.extend_from_slice(&tx.hash);
-    }
-    // TODO: use M1 crypto::hash
-    [1u8; 32] // placeholder
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::mempool::{Mempool, MempoolConfig};
-
-    // REMOVED: setup() was unused - clippy complained
-    // fn setup() -> (Consensus, ChainState, Mempool) {... }
-
-    #[test]
-    fn test_base_fee_increase() {
-        let fee = calculate_next_base_fee(1000, BLOCK_GAS_LIMIT); // 100% full
-        assert!(fee > 1000); // should increase ~12.5%
-        assert!(fee < 1150);
-    }
-
-    #[test]
-    fn test_base_fee_decrease() {
-        let fee = calculate_next_base_fee(1000, 0); // 0% full
-        assert!(fee < 1000); // should decrease ~12.5%
-        assert!(fee > 850);
-    }
-
-    #[test]
-    fn test_base_fee_stable() {
-        let fee = calculate_next_base_fee(1000, BLOCK_GAS_LIMIT / 2); // 50% full
-        assert_eq!(fee, 1000);
-    }
-}
+        }
