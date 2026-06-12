@@ -7,7 +7,7 @@ pub fn generate_keypair() -> (Vec<u8>, Vec<u8>) {
 }
 
 pub fn sign(sk: &[u8], msg: &[u8]) -> Vec<u8> {
-    let sk = SecretKey::from_bytes(sk).expect("invalid secret key");
+    let sk = SecretKey::from_bytes(sk).expect("invalid sk");
     let sig = detached_sign(msg, &sk);
     sig.as_bytes().to_vec()
 }
@@ -31,11 +31,11 @@ mod m1_tests {
     #[test]
     fn m1_keygen_sign_verify() {
         let (pk, sk) = generate_keypair();
-        assert_eq!(pk.len(), 2592); // D5/D5-AES pk same
-        assert_eq!(sk.len(), 4896); // FIXED: D5-AES sk is 4896
+        assert_eq!(pk.len(), 2592);
+        assert_eq!(sk.len(), 4896); // D5-AES
         let msg = b"test";
         let sig = sign(&sk, msg);
-        assert_eq!(sig.len(), 4595); // D5/D5-AES sig same
+        assert_eq!(sig.len(), 4595);
         assert!(verify(msg, &sig, &pk));
     }
 
@@ -47,4 +47,4 @@ mod m1_tests {
         sig[0] ^= 1;
         assert!(!verify(msg, &sig, &pk));
     }
-    }
+}
