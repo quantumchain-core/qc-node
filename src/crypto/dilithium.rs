@@ -1,4 +1,4 @@
-use pqcrypto_dilithium::dilithium5::*;
+use pqcrypto_dilithium::dilithium2::*;
 use pqcrypto_traits::sign::{PublicKey, SecretKey, DetachedSignature};
 
 pub fn generate_keypair() -> (Vec<u8>, Vec<u8>) {
@@ -7,7 +7,7 @@ pub fn generate_keypair() -> (Vec<u8>, Vec<u8>) {
 }
 
 pub fn sign(sk: &[u8], msg: &[u8]) -> Vec<u8> {
-    let sk = SecretKey::from_bytes(sk).expect("sk must be 4032 bytes");
+    let sk = SecretKey::from_bytes(sk).expect("sk must be 2528 bytes");
     let sig = detached_sign(msg, &sk);
     sig.as_bytes().to_vec()
 }
@@ -31,11 +31,11 @@ mod m1_tests {
     #[test]
     fn m1_keygen_sign_verify() {
         let (pk, sk) = generate_keypair();
-        assert_eq!(pk.len(), 1952); // Dilithium5 pk
-        assert_eq!(sk.len(), 4032); // Dilithium5 sk
+        assert_eq!(pk.len(), 1312); // Dilithium2 pk
+        assert_eq!(sk.len(), 2528); // Dilithium2 sk
         let msg = b"test";
         let sig = sign(&sk, msg);
-        assert_eq!(sig.len(), 4595); // Dilithium5 sig
+        assert_eq!(sig.len(), 2420); // Dilithium2 sig
         assert!(verify(msg, &sig, &pk));
     }
 
@@ -47,4 +47,4 @@ mod m1_tests {
         sig[0] ^= 1;
         assert!(!verify(msg, &sig, &pk));
     }
-}
+                   }
