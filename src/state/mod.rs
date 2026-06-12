@@ -2,6 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use crate::chain::Hash;
 
+pub mod executor;  // ADD THIS
+pub mod storage;   // ADD THIS
+pub use executor::Executor; // ADD THIS
+pub use storage::Storage;   // ADD THIS
+
 pub type Address = [u8; 32];
 
 /// Account state - like Ethereum accounts
@@ -25,7 +30,7 @@ impl Account {
 }
 
 /// In-memory state DB - M6 keeps it simple first
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // ADD Serialize, Deserialize HERE
 pub struct StateDB {
     accounts: HashMap<Address, Account>,
 }
