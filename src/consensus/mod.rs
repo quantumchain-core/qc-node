@@ -243,9 +243,9 @@ fn calculate_next_base_fee(parent_base_fee: u64, parent_gas_used: u64) -> u64 {
 
 fn now_secs() -> u64 {
     SystemTime::now()
-     .duration_since(UNIX_EPOCH)
-     .unwrap_or_default()
-     .as_secs()
+       .duration_since(UNIX_EPOCH)
+       .unwrap_or_default()
+       .as_secs()
 }
 
 fn merkle_root(txs: &[Transaction]) -> [u8; 32] {
@@ -256,4 +256,36 @@ fn merkle_root(txs: &[Transaction]) -> [u8; 32] {
     let mut data = Vec::new();
     for tx in txs {
         data.extend_from_slice(&tx.hash);
-        }
+    }
+    // TODO: use M1 crypto::hash
+    [1u8; 32] // placeholder
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_base_fee_increase() {
+        let fee = calculate_next_base_fee(1000, BLOCK_GAS_LIMIT); // 100% full
+        assert!(fee > 1000); // should increase ~12.5%
+        assert!(fee < 1150);
+    }
+
+    #[test]
+    fn test_base_fee_decrease() {
+        let fee = calculate_next_base_fee(1000, 0); // 0% full
+        assert!(fee < 1000); // should decrease ~12.5%
+        assert!(fee > 850);
+    }
+
+    #[test]
+    fn test_base_fee_stable() {
+        let fee = calculate_next_base_fee(1000, BLOCK_GAS_LIMIT / 2); // 50% full
+        assert_eq!(fee, 1000);
+    }
+            }
