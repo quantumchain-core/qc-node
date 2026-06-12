@@ -20,7 +20,7 @@ pub async fn new_swarm() -> Result<libp2p::Swarm<QcBehaviour>, Box<dyn Error>> {
     let gossipsub_config = gossipsub::ConfigBuilder::default()
         .validation_mode(ValidationMode::Strict)
         .build()
-        .map_err(|e| Box::<dyn Error>::from(e))?;
+        .map_err(Box::<dyn Error>::from)?;
 
     let mut gossipsub_behaviour = gossipsub::Behaviour::new(
         MessageAuthenticity::Signed(id_keys.clone()),
