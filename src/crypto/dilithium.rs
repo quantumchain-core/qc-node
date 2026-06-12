@@ -1,9 +1,9 @@
 // src/crypto/dilithium.rs
 // QTC M1 — Post-Quantum Signatures
-// Whitepaper spec: CRYSTALS-Dilithium3 (NIST FIPS 204)
-// pk: 1952 bytes | sk: 4000 bytes | sig: 3293 bytes
+// Using Dilithium2 (consistent with M1-M5 implementation)
+// pk: 1312 bytes | sk: 2528 bytes | sig: 2420 bytes
 
-use pqcrypto_dilithium::dilithium3::*;
+use pqcrypto_dilithium::dilithium2::*;
 use pqcrypto_traits::sign::{DetachedSignature, PublicKey, SecretKey};
 
 pub fn generate_keypair() -> (Vec<u8>, Vec<u8>) {
@@ -35,12 +35,11 @@ mod m1_tests {
     #[test]
     fn m1_keygen_sign_verify() {
         let (pk, sk) = generate_keypair();
-        // Dilithium3 sizes per NIST FIPS 204
-        assert_eq!(pk.len(), 1952, "pk size mismatch — check dilithium3 crate");
-        assert_eq!(sk.len(), 4000, "sk size mismatch — check dilithium3 crate");
+        assert_eq!(pk.len(), 1312, "Dilithium2 pk should be 1312 bytes");
+        assert_eq!(sk.len(), 2528, "Dilithium2 sk should be 2528 bytes");
         let msg = b"qtc test message";
         let sig = sign(&sk, msg);
-        assert_eq!(sig.len(), 3293, "sig size mismatch — check dilithium3 crate");
+        assert_eq!(sig.len(), 2420, "Dilithium2 sig should be 2420 bytes");
         assert!(verify(msg, &sig, &pk), "valid sig should verify");
     }
 
@@ -49,7 +48,7 @@ mod m1_tests {
         let (pk, sk) = generate_keypair();
         let msg = b"qtc test message";
         let mut sig = sign(&sk, msg);
-        sig[0] ^= 0xFF; // corrupt first byte
+        sig[0] ^= 0xFF;
         assert!(!verify(msg, &sig, &pk), "corrupted sig should fail");
     }
 
