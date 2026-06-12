@@ -25,8 +25,8 @@ pub const MAX_TXS_PER_BLOCK: usize = 10_000;
 // Types
 // ---------------------------------------------------------------------------
 
-/// PoS validator identity - M1 Dilithium2 pubkey
-pub type ValidatorId = [u8; 32];
+/// PoS validator identity - M1 Dilithium5 pubkey
+pub type ValidatorId = Vec<u8>; // FIXED: was [u8; 32], D5 is 2592 bytes
 
 /// Block proposer selected for a slot
 #[derive(Debug, Clone)]
@@ -133,14 +133,14 @@ impl Consensus {
             height: chain.height + 1,
             slot,
             timestamp,
-            proposer: self.validator_id,
+            proposer: self.validator_id.clone(),
             tx_root: merkle_root(&txs), // TODO: real merkle in M6
             base_fee: chain.base_fee,
             gas_used: block_gas_used,
             gas_limit: BLOCK_GAS_LIMIT,
         };
 
-        // 4. Sign block - M1 Dilithium2
+        // 4. Sign block - M1 Dilithium5
         let sig = self.sign_header(&header);
 
         // 5. Build block
@@ -199,11 +199,11 @@ impl Consensus {
         true // TODO: implement validator set + VRF
     }
 
-    /// Sign block header with M1 Dilithium2
+    /// Sign block header with M1 Dilithium5
     fn sign_header(&self, header: &BlockHeader) -> Vec<u8> {
         let _msg = bincode::serialize(header).unwrap();
         // TODO: call M1 crypto::sign(&self.validator_sk, &msg)
-        vec![0u8; 2420] // placeholder - wire M1 in M5.2
+        vec![0u8; 4595] // FIXED: Dilithium5 sig, was 2420
     }
 
     /// Verify block signature - M1
@@ -288,4 +288,4 @@ mod tests {
         let fee = calculate_next_base_fee(1000, BLOCK_GAS_LIMIT / 2); // 50% full
         assert_eq!(fee, 1000);
     }
-            }
+                }
