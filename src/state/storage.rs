@@ -1,14 +1,13 @@
-use crate::chain::{Block, Hash};
-use crate::state::StateDB;
-use thiserror::Error;
 use sled::Db;
-use std::path::Path;
+use thiserror::Error;
+use crate::chain::Block;
+use crate::state::StateDB;
 
 #[derive(Error, Debug)]
 pub enum StorageError {
-    #[error("sled db error: {0}")]
+    #[error("Sled error: {0}")]
     Sled(#[from] sled::Error),
-    #[error("bincode error: {0}")]
+    #[error("Serialization error: {0}")]
     Bincode(#[from] bincode::Error),
 }
 
@@ -17,40 +16,38 @@ pub struct Storage {
 }
 
 impl Storage {
-    /// M6: Open or create database at path
-    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, StorageError> {
+    pub fn new() -> Result<Self, StorageError> {
+        // M6: Use QC_DB_PATH in CI, fallback to./qc-data locally
+        let path = std::env::var("QC_DB_PATH").unwrap_or_else(|_| "./qc-data".to_string());
         let db = sled::open(path)?;
         Ok(Self { db })
     }
 
-    /// M6: Save block by hash
     pub fn put_block(&self, block: &Block) -> Result<(), StorageError> {
-        let hash = block.hash();
-        let bytes = bincode::serialize(block)?;
-        self.db.insert(hash, bytes)?;
+        let key = format!("block_{}", block.header.number);
+        let value = bincode::serialize(block)?;
+        self.db.insert(key, value)?;
         Ok(())
     }
 
-    /// M6: Load block by hash
-    pub fn get_block(&self, hash: &Hash) -> Result<Option<Block>, StorageError> {
-        match self.db.get(hash)? {
-            Some(bytes) => Ok(Some(bincode::deserialize(&bytes)?)),
+    pub fn get_block(&self, number: u64) -> Result<Option<Block>, StorageError> {
+        let key = format!("block_{}", number);
+        match self.db.get(key)? {
+            Some(ivec) => Ok(Some(bincode::deserialize(&ivec)?)),
             None => Ok(None),
         }
     }
 
-    /// M6: Save latest state
     pub fn put_state(&self, state: &StateDB) -> Result<(), StorageError> {
-        let bytes = bincode::serialize(state)?;
-        self.db.insert(b"state", bytes)?;
+        let value = bincode::serialize(state)?;
+        self.db.insert("state", value)?;
         Ok(())
     }
 
-    /// M6: Load latest state
-    pub fn get_state(&self) -> Result<StateDB, StorageError> {
-        match self.db.get(b"state")? {
-            Some(bytes) => Ok(bincode::deserialize(&bytes)?),
-            None => Ok(StateDB::new()), // empty state on first run
+    pub fn get_state(&self) -> Result<Option<StateDB>, StorageError> {
+        match self.db.get("state")? {
+            Some(ivec) => Ok(Some(bincode::deserialize(&ivec)?)),
+            None => Ok(None),
         }
     }
-}
+                     }
