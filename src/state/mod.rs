@@ -76,12 +76,15 @@ mod tests {
     use super::*;
     use crate::mempool::Transaction;
     use crate::chain::{Block, BlockHeader};
+    use tempfile::TempDir; // Add this import
 
     #
     fn test_execute_transfer() {
-        let mut state = StateDB::new();
+        // M6: Each test gets its own temp DB dir to prevent sled lock conflicts
+        let tmp_dir = TempDir::new().unwrap();
+        std::env::set_var("QC_DB_PATH", tmp_dir.path());
 
-        // Setup: Alice has 1000, Bob has 0
+        let mut state = StateDB::new();
         let alice: Address = [1u8; 32];
         let bob: Address = [2u8; 32];
         let coinbase: Address = [3u8; 32];
@@ -93,7 +96,6 @@ mod tests {
             storage_root: [0u8; 32]
         });
 
-        // Tx: Alice sends 100 to Bob, nonce 0, gas_limit 21, base_fee 1
         let tx = Transaction {
             from: alice,
             to: bob,
@@ -107,29 +109,20 @@ mod tests {
             number: 1,
             timestamp: 0,
             state_root: [0u8; 32],
-            gas_limit: 100000,
+            gas_limit: 10_000_000,
             gas_used: 21,
             base_fee: 1,
-            signature: [0u8; 2420], // Dilithium2 size
+            signature: [0u8; 2420],
         };
 
-        let block = Block {
-            header,
-            transactions: vec![tx],
-        };
+        let block = Block { header, transactions: vec![tx] };
 
-        // Execute
         let gas_used = Executor::execute_block(&mut state, &block, &coinbase).unwrap();
 
-        // Check results
-        let alice_acc = state.get_account(&alice);
-        let bob_acc = state.get_account(&bob);
-        let coinbase_acc = state.get_account(&coinbase);
-
         assert_eq!(gas_used, 21);
-        assert_eq!(alice_acc.balance, 1000 - 100 - 21); // value + gas
-        assert_eq!(alice_acc.nonce, 1);
-        assert_eq!(bob_acc.balance, 100);
-        assert_eq!(coinbase_acc.balance, 21); // got the gas
+        assert_eq!(state.get_account(&alice).balance, 879); // 1000 - 100 - 21
+        assert_eq!(state.get_account(&alice).nonce, 1);
+        assert_eq!(state.get_account(&bob).balance, 100);
+        assert_eq!(state.get_account(&coinbase).balance, 21);
     }
-            }
+    }
