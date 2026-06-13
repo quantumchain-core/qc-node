@@ -18,11 +18,13 @@ pub struct Account {
     pub storage_root: Hash,
 }
 
-impl Default for Account {
-    fn default() -> Self {
-        Self { balance: 0, nonce: 0, code: Vec::new(), storage_root: [0u8; 32] }
-    }
-}
+// Before:
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Account {
+
+// After:
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct Account {
 
 impl Account {
     pub fn new() -> Self { Self::default() }
