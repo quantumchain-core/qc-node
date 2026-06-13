@@ -1,8 +1,18 @@
+// src/net/mod.rs
+// QTC M2 + M7: libp2p swarm + gossip publishing
+
+pub mod handler;
+pub use handler::{GossipMsg, HandleResult, handle_gossip};
+
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{gossipsub, noise, tcp, yamux, PeerId, SwarmBuilder};
 use libp2p::gossipsub::{IdentTopic, MessageAuthenticity, ValidationMode};
 use libp2p::identity::Keypair;
 use std::error::Error;
+
+/// Topics
+pub const TOPIC_BLOCKS: &str = "qc-blocks";
+pub const TOPIC_TXS:    &str = "qc-txs";
 
 #[derive(NetworkBehaviour)]
 pub struct QcBehaviour {
@@ -27,8 +37,9 @@ pub async fn new_swarm() -> Result<libp2p::Swarm<QcBehaviour>, Box<dyn Error>> {
         gossipsub_config,
     )?;
 
-    let topic = IdentTopic::new("qc-blocks");
-    gossipsub_behaviour.subscribe(&topic)?;
+    // Subscribe to both topics
+    gossipsub_behaviour.subscribe(&IdentTopic::new(TOPIC_BLOCKS))?;
+    gossipsub_behaviour.subscribe(&IdentTopic::new(TOPIC_TXS))?;
 
     let swarm = SwarmBuilder::with_existing_identity(id_keys)
         .with_tokio()
@@ -43,6 +54,28 @@ pub async fn new_swarm() -> Result<libp2p::Swarm<QcBehaviour>, Box<dyn Error>> {
         .build();
 
     Ok(swarm)
+}
+
+/// Publish a GossipMsg to the correct topic.
+/// Call this after producing a block or receiving a new tx from RPC.
+pub fn publish(
+    swarm: &mut libp2p::Swarm<QcBehaviour>,
+    msg: &GossipMsg,
+) -> Result<(), String> {
+    let (topic, bytes) = match msg {
+        GossipMsg::NewBlock(_) => (
+            IdentTopic::new(TOPIC_BLOCKS),
+            bincode::serialize(msg).map_err(|e| e.to_string())?,
+        ),
+        GossipMsg::NewTx(_) => (
+            IdentTopic::new(TOPIC_TXS),
+            bincode::serialize(msg).map_err(|e| e.to_string())?,
+        ),
+    };
+    swarm.behaviour_mut().gossipsub
+        .publish(topic, bytes)
+        .map(|_| ())
+        .map_err(|e| format!("publish failed: {e:?}"))
 }
 
 #[cfg(test)]
