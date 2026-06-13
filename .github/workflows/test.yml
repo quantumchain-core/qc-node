@@ -1,4 +1,4 @@
-name: Test M1+M2+M3+M4+M5+M6
+name: Test M1+M2+M3+M4+M5+M6+M7
 
 on:
   push:
@@ -14,14 +14,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
         profile: minimal
         override: true
-    
+
     - name: Cache cargo
       uses: actions/cache@v3
       with:
@@ -32,14 +32,14 @@ jobs:
           ~/.cargo/git/db/
           target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    
+
     - name: Build
       run: cargo build --verbose
-      
+
     - name: Run tests
       run: cargo test --verbose -- --test-threads=1 --nocapture
       env:
-        QC_DB_PATH: /tmp/qc-node-ci # M6: sled needs a clean writable dir
-    
+        QC_DB_PATH: /tmp/qc-node-ci
+
     - name: Run clippy
       run: cargo clippy -- -D warnings
