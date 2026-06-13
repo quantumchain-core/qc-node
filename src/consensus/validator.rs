@@ -3,28 +3,17 @@
 // Verifies Dilithium2 signature on block header
 
 use crate::chain::Block;
-use crate::crypto::verify;
 
 /// Validate a block's proposer signature.
-/// Returns Ok(()) if valid, Err with reason if not.
 pub fn validate_block_sig(block: &Block) -> Result<(), String> {
-    let signable = block.header.to_signable_bytes();
-    let pk = &block.header.proposer; // 32-byte address — not full pubkey
-
-    // NOTE: proposer field is currently a 32-byte address hash, not full pubkey.
-    // For real sig verification we need the full 1312-byte Dilithium2 pubkey.
-    // This will be wired when validator registry is added in M7.
-    // For now: accept all blocks with non-empty signatures (placeholder).
     if block.header.signature.is_empty() {
         return Err("missing signature".into());
     }
-
-    // TODO M7: look up full pubkey from validator registry by proposer address
+    // TODO M8: look up full 1312-byte pk from validator registry by proposer address
+    // let signable = block.header.to_signable_bytes();
     // if !verify(&signable, &block.header.signature, full_pk) {
     //     return Err("invalid signature".into());
     // }
-    let _ = (signable, pk); // suppress unused warnings until M7
-
     Ok(())
 }
 
