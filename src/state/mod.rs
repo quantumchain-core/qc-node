@@ -1,4 +1,3 @@
-cat > /mnt/user-data/outputs/src/state/mod.rs << 'EOF'
 // src/state/mod.rs
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -21,19 +20,12 @@ pub struct Account {
 
 impl Default for Account {
     fn default() -> Self {
-        Self {
-            balance: 0,
-            nonce: 0,
-            code: Vec::new(),
-            storage_root: [0u8; 32],
-        }
+        Self { balance: 0, nonce: 0, code: Vec::new(), storage_root: [0u8; 32] }
     }
 }
 
 impl Account {
-    pub fn new() -> Self {
-        Self::default()
-    }
+    pub fn new() -> Self { Self::default() }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,17 +34,11 @@ pub struct StateDB {
 }
 
 impl Default for StateDB {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 impl StateDB {
-    pub fn new() -> Self {
-        Self {
-            accounts: HashMap::new(),
-        }
-    }
+    pub fn new() -> Self { Self { accounts: HashMap::new() } }
 
     pub fn get_account(&self, addr: &Address) -> Account {
         self.accounts.get(addr).cloned().unwrap_or_default()
@@ -103,7 +89,10 @@ mod tests {
             header: BlockHeader {
                 parent_hash: [0u8; 32],
                 number: 1,
+                slot: 0,
                 timestamp: 0,
+                proposer: [0u8; 32],
+                tx_root: [0u8; 32],
                 state_root: [0u8; 32],
                 gas_limit: 10_000_000,
                 gas_used,
@@ -121,19 +110,13 @@ mod tests {
         let bob: Address = [2u8; 32];
         let coinbase: Address = [3u8; 32];
 
-        state.set_account(alice, Account {
-            balance: 1000,
-            nonce: 0,
-            ..Default::default()
-        });
+        state.set_account(alice, Account { balance: 1000, nonce: 0, ..Default::default() });
 
         let tx = make_tx(alice, bob, 100, 0);
         let block = make_block(vec![tx], 21);
-
         let gas_used = Executor::execute_block(&mut state, &block, &coinbase).unwrap();
 
         assert_eq!(gas_used, 21);
-        // alice pays: 100 value + 21 gas * 1 base_fee = 121
         assert_eq!(state.get_account(&alice).balance, 879);
         assert_eq!(state.get_account(&alice).nonce, 1);
         assert_eq!(state.get_account(&bob).balance, 100);
@@ -146,16 +129,9 @@ mod tests {
         let alice: Address = [1u8; 32];
         let bob: Address = [2u8; 32];
         let coinbase: Address = [3u8; 32];
-
-        state.set_account(alice, Account {
-            balance: 10, // not enough
-            nonce: 0,
-            ..Default::default()
-        });
-
+        state.set_account(alice, Account { balance: 10, nonce: 0, ..Default::default() });
         let tx = make_tx(alice, bob, 100, 0);
         let block = make_block(vec![tx], 21);
-
         let result = Executor::execute_block(&mut state, &block, &coinbase);
         assert!(matches!(result, Err(ExecError::InsufficientBalance(_, _))));
     }
@@ -166,16 +142,9 @@ mod tests {
         let alice: Address = [1u8; 32];
         let bob: Address = [2u8; 32];
         let coinbase: Address = [3u8; 32];
-
-        state.set_account(alice, Account {
-            balance: 1000,
-            nonce: 5, // expects 5, tx sends 0
-            ..Default::default()
-        });
-
+        state.set_account(alice, Account { balance: 1000, nonce: 5, ..Default::default() });
         let tx = make_tx(alice, bob, 100, 0);
         let block = make_block(vec![tx], 21);
-
         let result = Executor::execute_block(&mut state, &block, &coinbase);
         assert!(matches!(result, Err(ExecError::NonceMismatch(5, 0))));
     }
@@ -185,9 +154,6 @@ mod tests {
         let mut state = StateDB::new();
         let alice: Address = [1u8; 32];
         state.set_account(alice, Account { balance: 500, nonce: 1, ..Default::default() });
-        let root1 = state.state_root();
-        let root2 = state.state_root();
-        assert_eq!(root1, root2);
+        assert_eq!(state.state_root(), state.state_root());
     }
 }
-EOF
