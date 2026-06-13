@@ -10,7 +10,7 @@ pub use storage::{Storage, StorageError};
 
 pub type Address = [u8; 32];
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct Account {
     pub balance: u128,
     pub nonce: u64,
@@ -18,29 +18,17 @@ pub struct Account {
     pub storage_root: Hash,
 }
 
-// Before:
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Account {
-
-// After:
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-pub struct Account {
-
 impl Account {
     pub fn new() -> Self { Self::default() }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StateDB {
     accounts: HashMap<Address, Account>,
 }
 
-impl Default for StateDB {
-    fn default() -> Self { Self::new() }
-}
-
 impl StateDB {
-    pub fn new() -> Self { Self { accounts: HashMap::new() } }
+    pub fn new() -> Self { Self::default() }
 
     pub fn get_account(&self, addr: &Address) -> Account {
         self.accounts.get(addr).cloned().unwrap_or_default()
