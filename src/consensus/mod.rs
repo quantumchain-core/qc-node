@@ -2,6 +2,10 @@
 // QTC M5: Consensus Engine
 // Uses unified chain types: number (not height), proposer=[u8;32], sig on BlockHeader
 
+pub mod producer;
+pub mod validator;
+pub use validator::validate_block_sig;
+
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::chain::{Block, BlockHeader};
 use crate::mempool::{Transaction, Mempool};
@@ -10,7 +14,7 @@ pub const BLOCK_TIME_SECS: u64 = 2;
 pub const BLOCK_GAS_LIMIT: u64 = 30_000_000;
 pub const MAX_TXS_PER_BLOCK: usize = 10_000;
 
-pub type ValidatorId = [u8; 32]; // 32-byte address hash of Dilithium2 pubkey
+pub type ValidatorId = [u8; 32];
 
 #[derive(Debug, Clone)]
 pub struct SlotProposer {
@@ -79,21 +83,21 @@ impl Consensus {
 
         let header = BlockHeader {
             parent_hash: chain.head_hash,
-            number: chain.number + 1,      // FIXED: was height
+            number: chain.number + 1,
             slot,
             timestamp: now_secs(),
-            proposer: self.validator_id,   // FIXED: [u8; 32] not Vec<u8>
+            proposer: self.validator_id,
             tx_root: merkle_root(&txs),
             state_root: [0u8; 32],
             base_fee: chain.base_fee,
             gas_used: block_gas_used,
             gas_limit: BLOCK_GAS_LIMIT,
-            signature: self.sign_header_bytes(), // FIXED: on BlockHeader not Block
+            signature: self.sign_header_bytes(),
         };
 
         let block = Block {
             header,
-            transactions: txs.clone(), // FIXED: no signature field on Block
+            transactions: txs.clone(),
         };
 
         for tx in &block.transactions {
@@ -128,12 +132,11 @@ impl Consensus {
     }
 
     fn is_proposer(&self, _slot: u64) -> bool {
-        true // TODO: VRF in M7
+        true // TODO: VRF in M8
     }
 
     fn sign_header_bytes(&self) -> Vec<u8> {
-        // TODO: wire M1 crypto::sign() in producer.rs
-        vec![0u8; 2420]
+        vec![0u8; 2420] // TODO: wire M1 crypto::sign() in producer.rs
     }
 }
 
@@ -157,7 +160,7 @@ fn now_secs() -> u64 {
 
 fn merkle_root(txs: &[Transaction]) -> [u8; 32] {
     if txs.is_empty() { return [0u8; 32]; }
-    [1u8; 32] // TODO: real merkle in M7
+    [1u8; 32] // TODO: real merkle in M8
 }
 
 #[cfg(test)]
