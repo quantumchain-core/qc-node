@@ -1,25 +1,26 @@
+cat > /mnt/user-data/outputs/src/state/mod.rs << 'EOF'
+// src/state/mod.rs
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use crate::chain::Hash;
 
 pub mod executor;
 pub mod storage;
-pub use executor::{Executor, ExecError};
+pub use executor::{ExecError, Executor};
 pub use storage::{Storage, StorageError};
 
 pub type Address = [u8; 32];
 
-/// Account state - like Ethereum accounts
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Account {
-    pub balance: u128, // M6: coin balance
-    pub nonce: u64, // M6: tx counter per account
-    pub code: Vec<u8>, // M9: smart contract code - empty for now
-    pub storage_root: Hash, // M9: contract storage - zero for now
+    pub balance: u128,
+    pub nonce: u64,
+    pub code: Vec<u8>,
+    pub storage_root: Hash,
 }
 
-impl Account {
-    pub fn new() -> Self {
+impl Default for Account {
+    fn default() -> Self {
         Self {
             balance: 0,
             nonce: 0,
@@ -29,10 +30,21 @@ impl Account {
     }
 }
 
-/// In-memory state DB - M6 keeps it simple first
+impl Account {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateDB {
     accounts: HashMap<Address, Account>,
+}
+
+impl Default for StateDB {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StateDB {
@@ -42,26 +54,19 @@ impl StateDB {
         }
     }
 
-    /// Get account, create if missing
     pub fn get_account(&self, addr: &Address) -> Account {
-        self.accounts.get(addr).cloned().unwrap_or_else(Account::new)
+        self.accounts.get(addr).cloned().unwrap_or_default()
     }
 
-    /// Update account
     pub fn set_account(&mut self, addr: Address, account: Account) {
         self.accounts.insert(addr, account);
     }
 
-    /// M6: Calculate state_root - hash of all accounts
-    /// Simple version: hash all account data. M9 will use Merkle Patricia Trie
     pub fn state_root(&self) -> Hash {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
-
-        // Sort by address so root is deterministic
         let mut accounts: Vec<_> = self.accounts.iter().collect();
         accounts.sort_by_key(|(addr, _)| *addr);
-
         for (addr, acc) in accounts {
             hasher.update(addr);
             hasher.update(acc.balance.to_le_bytes());
@@ -74,16 +79,43 @@ impl StateDB {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mempool::Transaction;
     use crate::chain::{Block, BlockHeader};
-    use tempfile::TempDir; // Add this import
+    use crate::mempool::Transaction;
+    use crate::state::executor::Executor;
 
-    #
+    fn make_tx(from: [u8; 32], to: [u8; 32], value: u64, nonce: u64) -> Transaction {
+        Transaction {
+            hash: [0u8; 32],
+            from,
+            to,
+            value,
+            nonce,
+            base_fee: 1,
+            priority_fee: 0,
+            gas_limit: 21,
+            signature: vec![0u8; 2420],
+            received_at: 0,
+        }
+    }
+
+    fn make_block(txs: Vec<Transaction>, gas_used: u64) -> Block {
+        Block {
+            header: BlockHeader {
+                parent_hash: [0u8; 32],
+                number: 1,
+                timestamp: 0,
+                state_root: [0u8; 32],
+                gas_limit: 10_000_000,
+                gas_used,
+                base_fee: 1,
+                signature: vec![0u8; 2420],
+            },
+            transactions: txs,
+        }
+    }
+
+    #[test]
     fn test_execute_transfer() {
-        // M6: Each test gets its own temp DB dir to prevent sled lock conflicts
-        let tmp_dir = TempDir::new().unwrap();
-        std::env::set_var("QC_DB_PATH", tmp_dir.path());
-
         let mut state = StateDB::new();
         let alice: Address = [1u8; 32];
         let bob: Address = [2u8; 32];
@@ -92,37 +124,70 @@ mod tests {
         state.set_account(alice, Account {
             balance: 1000,
             nonce: 0,
-            code: vec![],
-            storage_root: [0u8; 32]
+            ..Default::default()
         });
 
-        let tx = Transaction {
-            from: alice,
-            to: bob,
-            value: 100,
-            nonce: 0,
-            gas_limit: 21,
-        };
-
-        let header = BlockHeader {
-            parent_hash: [0u8; 32],
-            number: 1,
-            timestamp: 0,
-            state_root: [0u8; 32],
-            gas_limit: 10_000_000,
-            gas_used: 21,
-            base_fee: 1,
-            signature: [0u8; 2420],
-        };
-
-        let block = Block { header, transactions: vec![tx] };
+        let tx = make_tx(alice, bob, 100, 0);
+        let block = make_block(vec![tx], 21);
 
         let gas_used = Executor::execute_block(&mut state, &block, &coinbase).unwrap();
 
         assert_eq!(gas_used, 21);
-        assert_eq!(state.get_account(&alice).balance, 879); // 1000 - 100 - 21
+        // alice pays: 100 value + 21 gas * 1 base_fee = 121
+        assert_eq!(state.get_account(&alice).balance, 879);
         assert_eq!(state.get_account(&alice).nonce, 1);
         assert_eq!(state.get_account(&bob).balance, 100);
         assert_eq!(state.get_account(&coinbase).balance, 21);
     }
+
+    #[test]
+    fn test_insufficient_balance() {
+        let mut state = StateDB::new();
+        let alice: Address = [1u8; 32];
+        let bob: Address = [2u8; 32];
+        let coinbase: Address = [3u8; 32];
+
+        state.set_account(alice, Account {
+            balance: 10, // not enough
+            nonce: 0,
+            ..Default::default()
+        });
+
+        let tx = make_tx(alice, bob, 100, 0);
+        let block = make_block(vec![tx], 21);
+
+        let result = Executor::execute_block(&mut state, &block, &coinbase);
+        assert!(matches!(result, Err(ExecError::InsufficientBalance(_, _))));
     }
+
+    #[test]
+    fn test_nonce_mismatch() {
+        let mut state = StateDB::new();
+        let alice: Address = [1u8; 32];
+        let bob: Address = [2u8; 32];
+        let coinbase: Address = [3u8; 32];
+
+        state.set_account(alice, Account {
+            balance: 1000,
+            nonce: 5, // expects 5, tx sends 0
+            ..Default::default()
+        });
+
+        let tx = make_tx(alice, bob, 100, 0);
+        let block = make_block(vec![tx], 21);
+
+        let result = Executor::execute_block(&mut state, &block, &coinbase);
+        assert!(matches!(result, Err(ExecError::NonceMismatch(5, 0))));
+    }
+
+    #[test]
+    fn test_state_root_deterministic() {
+        let mut state = StateDB::new();
+        let alice: Address = [1u8; 32];
+        state.set_account(alice, Account { balance: 500, nonce: 1, ..Default::default() });
+        let root1 = state.state_root();
+        let root2 = state.state_root();
+        assert_eq!(root1, root2);
+    }
+}
+EOF
