@@ -4,6 +4,7 @@
 
 pub mod producer;
 pub mod validator;
+pub use producer::Producer;
 pub use validator::validate_block_sig;
 
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -132,11 +133,11 @@ impl Consensus {
     }
 
     fn is_proposer(&self, _slot: u64) -> bool {
-        true // TODO: VRF in M8
+        true // TODO: VRF in M10+
     }
 
     fn sign_header_bytes(&self) -> Vec<u8> {
-        vec![0u8; 2420] // TODO: wire M1 crypto::sign() in producer.rs
+        vec![0u8; 2420] // TODO: wire M1 crypto::sign() — Producer (M6) already does this for real blocks
     }
 }
 
@@ -160,7 +161,7 @@ fn now_secs() -> u64 {
 
 fn merkle_root(txs: &[Transaction]) -> [u8; 32] {
     if txs.is_empty() { return [0u8; 32]; }
-    [1u8; 32] // TODO: real merkle in M8
+    [1u8; 32] // TODO: real merkle in M10+
 }
 
 #[cfg(test)]
