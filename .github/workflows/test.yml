@@ -1,4 +1,4 @@
-name: Test M1+M2+M3+M4+M5+M6+M7
+name: Test M1+M2+M3+M4+M5+M6+M7+M8
 
 on:
   push:
