@@ -71,16 +71,10 @@ pub const ERR_INTERNAL: i32 = -32603;
 /// Minimal chain head info. The producer/event loop updates this after
 /// each block. Kept separate from ChainState (consensus) to avoid
 /// coupling RPC to consensus internals.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ChainHead {
     pub number: u64,
     pub head_hash: [u8; 32],
-}
-
-impl Default for ChainHead {
-    fn default() -> Self {
-        Self { number: 0, head_hash: [0u8; 32] }
-    }
 }
 
 #[derive(Clone)]
