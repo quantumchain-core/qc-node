@@ -4,24 +4,29 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-bincode = "1.3"
-# No feature flag needed â€” dilithium2/3/5 selected by import path, not features
+serde        = { version = "1.0", features = ["derive"] }
+bincode      = "1.3"
 pqcrypto-dilithium = "0.5"
-pqcrypto-traits = "0.3"
-sha3 = "0.10"
-sha2 = "0.10"
+pqcrypto-traits    = "0.3"
+sha3         = "0.10"
+sha2         = "0.10"
 
-# M2: libp2p with macros for #[derive(NetworkBehaviour)]
-libp2p = { version = "0.53.0", features = ["gossipsub", "tcp", "noise", "yamux", "tokio", "macros"] }
+# M2/M7: libp2p with macros + gossipsub for gossip layer
+libp2p       = { version = "0.53.0", features = ["gossipsub", "tcp", "noise", "yamux", "tokio", "macros"] }
 
-tokio = { version = "1.35", features = ["full"] }
-futures = "0.3"
+tokio        = { version = "1.35", features = ["full"] }
+futures      = "0.3"
 
 # M6: State execution + storage
-thiserror = "1.0"
-sled = "0.34"
+thiserror    = "1.0"
+sled         = "0.34"
+
+# M8: JSON-RPC HTTP server
+axum         = "0.7"
+serde_json   = "1.0"
+hex          = "0.4"
 
 [dev-dependencies]
-tokio = { version = "1.35", features = ["macros", "rt-multi-thread"] }
+tokio    = { version = "1.35", features = ["macros", "rt-multi-thread"] }
 tempfile = "3.8"
+tower    = { version = "0.4", features = ["util"] }
