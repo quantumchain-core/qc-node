@@ -61,6 +61,31 @@ impl Block {
     }
 }
 
+/// The fixed genesis block. Every node computes the same hash for this,
+/// so it acts as the universal "block 0" / chain root.
+///
+/// M9: Node::bootstrap() persists this to storage on first run and sets
+/// ChainHead to point at it, so the first produced/received block
+/// (number = 1) has a well-defined parent_hash.
+pub fn genesis_block() -> Block {
+    Block {
+        header: BlockHeader {
+            parent_hash: [0u8; 32],
+            number: 0,
+            slot: 0,
+            timestamp: 0,
+            proposer: [0u8; 32],
+            tx_root: [0u8; 32],
+            state_root: [0u8; 32],
+            base_fee: 1_000,
+            gas_used: 0,
+            gas_limit: 10_000_000,
+            signature: vec![0u8; 2420],
+        },
+        transactions: vec![],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,5 +127,15 @@ mod tests {
         };
         let block = Block { header, transactions: vec![] };
         assert_eq!(block.hash(), block.hash());
+    }
+
+    #[test]
+    fn test_genesis_block_hash_stable_and_nonzero() {
+        let g1 = genesis_block();
+        let g2 = genesis_block();
+        // Same inputs -> same hash every time
+        assert_eq!(g1.hash(), g2.hash());
+        // The hash itself is a real SHA256 digest, not the zero placeholder
+        assert_ne!(g1.hash(), [0u8; 32]);
     }
 }
