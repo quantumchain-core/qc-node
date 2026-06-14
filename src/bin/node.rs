@@ -9,7 +9,7 @@
 use std::sync::{Arc, Mutex};
 use qc_node::mempool::Mempool;
 use qc_node::rpc::{self, AppState, ChainHead};
-use qc_node::state::{StateDB, Storage};
+use qc_node::state::Storage;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
