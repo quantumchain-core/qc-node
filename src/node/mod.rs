@@ -1,16 +1,19 @@
 // src/node/mod.rs
-// QTC M9: Node — ties mempool, state, storage, consensus and gossip together.
+// QTC M9/M10: Node — ties mempool, state, storage, consensus and gossip together.
 //
 // This module contains the SYNCHRONOUS core logic (no swarm, no async).
 // It is fully unit-testable in-process: two Node instances sharing genesis
 // can simulate "node A produces a block" -> "node B receives it via gossip"
 // without any real networking.
 //
+// M10: Node now holds a ValidatorRegistry and uses real Dilithium2 signature
+// verification (validate_block_sig) when validating incoming blocks.
+//
 // src/bin/node.rs wraps this in an async loop that bridges to the libp2p
 // swarm (incoming gossip -> on_gossip, outbox -> net::publish).
 
 use crate::chain::{genesis_block, Block};
-use crate::consensus::{validate_block_sig, Producer};
+use crate::consensus::{validate_block_sig, Producer, ValidatorRegistry};
 use crate::net::{GossipMsg, HandleResult};
 use crate::rpc::AppState;
 use crate::state::Executor;
@@ -18,13 +21,14 @@ use crate::state::Executor;
 pub struct Node {
     pub app: AppState,
     pub producer: Producer,
+    pub registry: ValidatorRegistry,
 }
 
 impl Node {
     /// Create a new Node and bootstrap genesis if this is a fresh chain
     /// (chain_head is at its default zero value).
-    pub fn new(app: AppState, producer: Producer) -> Self {
-        let node = Self { app, producer };
+    pub fn new(app: AppState, producer: Producer, registry: ValidatorRegistry) -> Self {
+        let node = Self { app, producer, registry };
         node.bootstrap();
         node
     }
@@ -76,8 +80,8 @@ impl Node {
             ));
         }
 
-        // 2. Signature (full pubkey verification deferred to validator registry, M10+)
-        if let Err(e) = validate_block_sig(&block) {
+        // 2. Signature — M10: real Dilithium2 verify against registry
+        if let Err(e) = validate_block_sig(&block, &self.registry) {
             return HandleResult::BlockRejected(format!("bad sig: {e}"));
         }
 
@@ -247,7 +251,9 @@ mod tests {
     #[test]
     fn test_bootstrap_sets_genesis_head() {
         let app = fresh_app_state();
-        let node = Node::new(app.clone(), make_producer([9u8; 32]));
+        let producer = make_producer([9u8; 32]);
+        let registry = ValidatorRegistry::single(&producer.validator_pk);
+        let node = Node::new(app.clone(), producer, registry);
 
         let head = node.app.chain_head.lock().unwrap().clone();
         assert_eq!(head.number, 0);
@@ -261,7 +267,9 @@ mod tests {
     #[test]
     fn test_on_gossip_tx_accepted() {
         let app = fresh_app_state();
-        let mut node = Node::new(app, make_producer([9u8; 32]));
+        let producer = make_producer([9u8; 32]);
+        let registry = ValidatorRegistry::single(&producer.validator_pk);
+        let mut node = Node::new(app, producer, registry);
 
         let tx = make_tx(1, 0);
         let raw = bincode::serialize(&GossipMsg::NewTx(tx)).unwrap();
@@ -272,7 +280,9 @@ mod tests {
     #[test]
     fn test_on_gossip_block_wrong_parent_rejected() {
         let app = fresh_app_state();
-        let mut node = Node::new(app, make_producer([9u8; 32]));
+        let producer = make_producer([9u8; 32]);
+        let registry = ValidatorRegistry::single(&producer.validator_pk);
+        let mut node = Node::new(app, producer, registry);
 
         let mut block = genesis_block();
         block.header.number = 1;
@@ -286,14 +296,18 @@ mod tests {
     #[test]
     fn test_try_produce_block_empty_mempool_returns_none() {
         let app = fresh_app_state();
-        let mut node = Node::new(app, make_producer([9u8; 32]));
+        let producer = make_producer([9u8; 32]);
+        let registry = ValidatorRegistry::single(&producer.validator_pk);
+        let mut node = Node::new(app, producer, registry);
         assert_eq!(node.try_produce_block().unwrap(), None);
     }
 
     #[test]
     fn test_try_produce_block_advances_head_and_queues_gossip() {
         let app = fresh_app_state();
-        let mut node = Node::new(app.clone(), make_producer([9u8; 32]));
+        let producer = make_producer([9u8; 32]);
+        let registry = ValidatorRegistry::single(&producer.validator_pk);
+        let mut node = Node::new(app.clone(), producer, registry);
 
         // Fund sender: needs value(10) + gas_limit(21_000)*base_fee(1_000)
         let mut from_addr = [0u8; 32];
@@ -329,11 +343,19 @@ mod tests {
     fn test_produce_then_gossip_to_second_node() {
         // Node A produces a block; Node B (separate state, same genesis)
         // receives it via on_gossip and reaches the same head.
+        // M10: B's registry must contain A's pubkey to verify A's signature.
         let app_a = fresh_app_state();
         let app_b = fresh_app_state();
 
-        let mut node_a = Node::new(app_a.clone(), make_producer([9u8; 32]));
-        let mut node_b = Node::new(app_b.clone(), make_producer([8u8; 32]));
+        let producer_a = make_producer([9u8; 32]);
+        let producer_b = make_producer([8u8; 32]);
+
+        let mut registry = ValidatorRegistry::new();
+        registry.insert(producer_a.validator_pk.clone());
+        registry.insert(producer_b.validator_pk.clone());
+
+        let mut node_a = Node::new(app_a.clone(), producer_a, registry.clone());
+        let mut node_b = Node::new(app_b.clone(), producer_b, registry.clone());
 
         // Both start from the same genesis hash
         assert_eq!(
@@ -377,7 +399,9 @@ mod tests {
     #[test]
     fn test_drain_outbox_empties_queue() {
         let app = fresh_app_state();
-        let mut node = Node::new(app, make_producer([9u8; 32]));
+        let producer = make_producer([9u8; 32]);
+        let registry = ValidatorRegistry::single(&producer.validator_pk);
+        let mut node = Node::new(app, producer, registry);
         node.app.outbox.lock().unwrap().push(GossipMsg::NewTx(make_tx(1, 0)));
         assert_eq!(node.drain_outbox().len(), 1);
         assert_eq!(node.drain_outbox().len(), 0); // drained
