@@ -1,17 +1,21 @@
 // src/consensus/producer.rs
-// QTC M5/M6: Block Producer
-// Signs blocks with Dilithium2, executes txs, saves to disk
+// QTC M5/M6/M10: Block Producer
+// Signs blocks with Dilithium2, executes txs, saves to disk.
+// M10: proposer field is now derived from the validator's own pubkey
+// (address = SHA3-256(pubkey)), so validate_block_sig() can look it up
+// in the ValidatorRegistry.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::chain::{Block, BlockHeader, Address};
 use crate::mempool::Mempool;
 use crate::state::{StateDB, Executor, Storage};
 use crate::crypto::sign;
+use super::registry::address_from_pubkey;
 
 pub struct Producer {
     pub validator_sk: Vec<u8>,  // Dilithium2 secret key (2560 bytes)
     pub validator_pk: Vec<u8>,  // Dilithium2 public key (1312 bytes)
-    pub coinbase: Address,
+    pub coinbase: Address,      // fee recipient (may differ from proposer address)
 }
 
 impl Producer {
@@ -41,7 +45,7 @@ impl Producer {
             number: parent.header.number + 1,
             slot: parent.header.slot + 1,
             timestamp,
-            proposer: self.coinbase,
+            proposer: address_from_pubkey(&self.validator_pk), // M10: derived from pk
             tx_root: [0u8; 32],
             state_root: [0u8; 32],
             base_fee: parent.header.base_fee,
@@ -144,8 +148,7 @@ mod tests {
         from_addr[0] = 1;
 
         // gas_cost = gas_limit * base_fee = 21_000 * 1_000 = 21_000_000
-        // value = 10
-        // total needed = 21_000_010 — fund with 100_000_000 to be safe
+        // value = 10 -> total needed = 21_000_010
         state.set_account(from_addr, Account {
             balance: 100_000_000,
             nonce: 0,
@@ -164,5 +167,34 @@ mod tests {
         assert!(!block.header.signature.is_empty());
         assert_eq!(block.header.signature.len(), 2420);
         assert!(mempool.is_empty());
+    }
+
+    #[test]
+    fn test_proposer_matches_pubkey_address() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::env::set_var("QC_DB_PATH", tmp.path());
+
+        let producer = make_producer();
+        let mut mempool = Mempool::new(MempoolConfig {
+            base_fee: 1_000,
+            ..Default::default()
+        });
+
+        let mut state = StateDB::new();
+        let mut from_addr = [0u8; 32];
+        from_addr[0] = 1;
+        state.set_account(from_addr, Account {
+            balance: 100_000_000,
+            nonce: 0,
+            ..Default::default()
+        });
+
+        mempool.add(make_tx(1, 0)).unwrap();
+        let storage = Storage::new().unwrap();
+        let parent = genesis();
+
+        let block = producer.produce_block(&mut mempool, &mut state, &storage, &parent).unwrap();
+
+        assert_eq!(block.header.proposer, address_from_pubkey(&producer.validator_pk));
     }
 }
