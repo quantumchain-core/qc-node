@@ -1,9 +1,10 @@
 // src/bin/node.rs
-// QTC M9: Node binary — async event loop
+// QTC M9/M10: Node binary — async event loop
 //
-// Wires together everything built in M1-M9:
+// Wires together everything built in M1-M10:
 //   - libp2p swarm (M2/M7): gossip in/out
 //   - Node (M9 core): on_gossip / try_produce_block / drain_outbox
+//   - ValidatorRegistry (M10): multi-validator genesis config + real sig verify
 //   - RPC server (M8): runs concurrently, shares AppState via Arc<Mutex<...>>
 //
 // Loop:
@@ -19,7 +20,7 @@ use futures::StreamExt;
 use libp2p::{gossipsub, swarm::SwarmEvent};
 
 use qc_node::chain::Address;
-use qc_node::consensus::{Producer, BLOCK_TIME_SECS};
+use qc_node::consensus::{Producer, ValidatorRegistry, BLOCK_TIME_SECS};
 use qc_node::crypto::generate_keypair;
 use qc_node::mempool::Mempool;
 use qc_node::net::{self, QcBehaviourEvent};
@@ -42,12 +43,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // --- Validator identity ---
-    // TODO M10: load from a persistent keystore instead of generating fresh each run
+    // TODO M11: load from a persistent keystore instead of generating fresh each run
     let (pk, sk) = generate_keypair();
-    let coinbase: Address = [9u8; 32]; // TODO M10: derive from pk via address hashing
-    let producer = Producer::new(sk, pk, coinbase);
+    let coinbase: Address = [9u8; 32]; // fee recipient — TODO M11: make configurable
+    let producer = Producer::new(sk, pk.clone(), coinbase);
 
-    let mut node = Node::new(app_state.clone(), producer);
+    // --- Validator registry (M10) ---
+    // QC_GENESIS_PATH points to a JSON file listing all known validators'
+    // (address, pubkey) pairs. If unset, fall back to a single-validator
+    // registry containing only this node's own pubkey (local dev / testnet-of-one).
+    let registry = match std::env::var("QC_GENESIS_PATH") {
+        Ok(path) => {
+            println!("loading validator registry from {path}");
+            ValidatorRegistry::load_from_file(&path)?
+        }
+        Err(_) => {
+            println!("QC_GENESIS_PATH not set; using self-registered single-validator registry");
+            ValidatorRegistry::single(&pk)
+        }
+    };
+    println!("validator registry loaded: {} validator(s)", registry.len());
+
+    let mut node = Node::new(app_state.clone(), producer, registry);
 
     // --- RPC server (M8) ---
     let rpc_app = rpc::router(app_state.clone());
