@@ -1,10 +1,17 @@
 // src/net/handler.rs
-// QTC M7: Gossip Message Handler
-// Handles incoming NewBlock and NewTx messages from the network
+// QTC M7/M10: Gossip Message Handler
+//
+// Lightweight, standalone validation of incoming gossip messages — checks
+// the wire format and a cheap non-empty-signature check on blocks.
+//
+// NOTE (M10): Full validation (real Dilithium2 verification against the
+// ValidatorRegistry, state execution, chain-head updates) happens in
+// node::Node::on_block, which has access to AppState + ValidatorRegistry.
+// This handler remains a minimal, registry-free check used for isolated
+// wire-format tests.
 
 use crate::chain::Block;
 use crate::mempool::{Mempool, Transaction};
-use crate::consensus::validator::validate_block_sig;
 
 /// Messages gossiped over the qc-blocks and qc-txs topics
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -54,9 +61,9 @@ fn handle_block(
         ));
     }
 
-    // 2. Validate signature (full verify wired in M8 via validator registry)
-    if let Err(e) = validate_block_sig(&block) {
-        return HandleResult::BlockRejected(format!("bad sig: {e}"));
+    // 2. Cheap signature presence check (full verify happens in node::Node::on_block)
+    if block.header.signature.is_empty() {
+        return HandleResult::BlockRejected("missing signature".into());
     }
 
     // 3. Remove txs that are now included in this block from mempool
@@ -64,8 +71,6 @@ fn handle_block(
         mempool.remove(&tx.hash);
     }
 
-    // Note: full state execution happens in the node event loop (not here)
-    // handler just validates and signals acceptance
     HandleResult::BlockAccepted
 }
 
