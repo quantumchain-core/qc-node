@@ -1,10 +1,14 @@
 // src/consensus/mod.rs
-// QTC M5: Consensus Engine
+// QTC M5/M10: Consensus Engine
 // Uses unified chain types: number (not height), proposer=[u8;32], sig on BlockHeader
+// M10: validator registry + real Dilithium2 signature verification.
 
 pub mod producer;
+pub mod registry;
 pub mod validator;
+
 pub use producer::Producer;
+pub use registry::{address_from_pubkey, ValidatorRegistry};
 pub use validator::validate_block_sig;
 
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -133,11 +137,11 @@ impl Consensus {
     }
 
     fn is_proposer(&self, _slot: u64) -> bool {
-        true // TODO: VRF in M10+
+        true // TODO: VRF in M11+
     }
 
     fn sign_header_bytes(&self) -> Vec<u8> {
-        vec![0u8; 2420] // TODO: wire M1 crypto::sign() — Producer (M6) already does this for real blocks
+        vec![0u8; 2420] // legacy path — Producer (M5/M6/M10) does real signing
     }
 }
 
@@ -161,7 +165,7 @@ fn now_secs() -> u64 {
 
 fn merkle_root(txs: &[Transaction]) -> [u8; 32] {
     if txs.is_empty() { return [0u8; 32]; }
-    [1u8; 32] // TODO: real merkle in M10+
+    [1u8; 32] // TODO: real merkle in M11+
 }
 
 #[cfg(test)]
