@@ -163,3 +163,27 @@ The governance rules themselves can be upgraded, but only via the full process (
 4. Receive 5/7 multisig + 66% validator quorum (higher bar than standard 51%)
 
 Immutable rules cannot be changed. Full stop.
+
+---
+
+## Architecture Decision Record — June 2026
+
+**M14 Vesting + Governance Implementation:**
+Native Rust modules in `qc-node` (`src/vesting/mod.rs`, `src/governance/mod.rs`).
+No Solidity, no external EVM chain dependency.
+
+**Rationale:**
+- $0 cost, no external chain dependency
+- Fully post-quantum (no ECDSA keys on Ethereum)
+- Same patterns already proven in M1-M10
+- Fastest path to mainnet
+
+**EVM Upgrade Path (Option B):**
+Full EVM execution layer inside `qc-node` is planned when grant funding
+arrives (target: Outlier Ventures Base Camp, a16z crypto, or M16-M19
+Foundation grants). EVM upgrade will be backward compatible — existing
+native Rust governance continues to work alongside it.
+
+**Decision made:** June 2026
+**Decided by:** Touqeer Ahmad (Founder + Chief Architect)
+**Recorded here as permanent architectural record.**
