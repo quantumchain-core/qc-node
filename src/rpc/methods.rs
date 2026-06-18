@@ -148,8 +148,8 @@ fn param_u64(params: &Value, idx: usize) -> Result<u64, String> {
 
 pub fn compute_tx_hash(tx: &Transaction) -> [u8; 32] {
     let mut hasher = Sha256::new();
-    hasher.update(&tx.from);
-    hasher.update(&tx.to);
+    hasher.update(tx.from);
+    hasher.update(tx.to);
     hasher.update(tx.value.to_le_bytes());
     hasher.update(tx.nonce.to_le_bytes());
     hasher.update(tx.base_fee.to_le_bytes());
