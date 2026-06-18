@@ -21,16 +21,19 @@ These cannot be changed by any DAO vote, multisig action, or code update:
 
 ## Allocation Table
 
-| Pool | % | QTC | Wallet Label | Vesting |
-|---|---|---|---|---|
-| Community Emissions | 38% | 380,000,000 | `0xCommunity` | 10yr linear to validators |
-| Ecosystem / Foundation | 15% | 150,000,000 | `0xFoundation` | 10% TGE, 90% 3yr DAO-controlled |
-| Founder | 15% | 150,000,000 | `0xFounderVesting` | 12mo cliff, 4yr linear |
-| Team Future Hires | 4% | 40,000,000 | `0xTeamVesting` | 12mo cliff, 4yr linear |
-| Advisors / Genesis Validators | 3% | 30,000,000 | `0xAdvisors` | 6mo cliff, 2yr linear |
-| Airdrop M13 | 1% | 10,000,000 | `0xAirdrop` | Unlocked at TGE |
-| Liquidity / LBP | 4% | 40,000,000 | `0xLBP` | 50% TGE, 50% at 6 months |
-| Strategic Reserve | 20% | 200,000,000 | `0xDAO` | DAO vote only, 5/7 multisig |
+| Pool | % | QTC | Wallet Label | On-Chain Address | Vesting |
+|---|---|---|---|---|---|
+| Community Emissions | 38% | 380,000,000 | `0xCommunity` | deployed M14 | 10yr linear to validators |
+| Ecosystem / Foundation | 15% | 150,000,000 | `0xFoundation` | deployed M14 | 10% TGE, 90% 3yr DAO-controlled |
+| Founder | 15% | 150,000,000 | `0xFounderVesting` | deployed M14 | 12mo cliff, 4yr linear |
+| Team Future Hires | 4% | 40,000,000 | `0xTeamVesting` | deployed M14 | 12mo cliff, 4yr linear |
+| Advisors / Genesis Validators | 3% | 30,000,000 | `0xAdvisors` | deployed M14 | 6mo cliff, 2yr linear |
+| Airdrop M13 | 1% | 10,000,000 | `0xAirdrop` | deployed M14 | Unlocked at TGE |
+| Liquidity / LBP | 4% | 40,000,000 | `0xLBP` | deployed M14 | 50% TGE, 50% at 6 months |
+| Strategic Reserve | 20% | 200,000,000 | `0xDAO` | deployed M14 | DAO vote only, 5/7 multisig |
+
+*Real addresses will be added here immediately after M14 contract deployment.
+This table will be updated and the commit hash recorded as the canonical address registry.*
 
 ---
 
@@ -96,7 +99,69 @@ These cannot be changed by any DAO vote, multisig action, or code update:
 - **Purpose:** Initial liquidity bootstrap + price discovery
 - **TGE:** 50% (20M QTC) available at launch
 - **Remaining:** 50% (20M QTC) at 6 months post-TGE
-- **Control:** 5/7 multisig for deployment decisions
+- **Control:** 5/7 multisig post-mainnet
+
+#### LBP USDC Raise Split — Pre-Launch Public Disclosure
+
+**This disclosure is mandatory reading before participating in the LBP.**
+
+Expected raise: ~$500,000 USDC. Split as follows:
+
+| Allocation | % | Amount | Purpose |
+|---|---|---|---|
+| DEX Liquidity | 40% | $200,000 | Locked 12mo in DEX LP |
+| Foundation Ops Fund | 60% | $300,000 | Chain survival budget |
+
+**Why 60% ops:** A chain with $0 ops cannot pay for its audit, legal
+opinion, CEX listing, or developer salary. It dies before block 100.
+Every successful L1 (Solana, Aptos, Sui) used a similar split.
+The difference between ops spending and a rug is this disclosure.
+
+#### Foundation Ops Fund — $300,000 USDC
+
+| Item | Amount | Type |
+|---|---|---|
+| Security audit (OtterSec/Halborn) | $50,000 | One-time |
+| CEX listing (tier 2) | $100,000 | One-time |
+| Legal opinion letter | $15,000 | One-time |
+| Bug bounty reserve | $20,000 | One-time |
+| Chief Architect salary (32mo × $3,000) | $96,000 | Monthly |
+| RPC/infrastructure (32mo × $500) | $16,000 | Monthly |
+| Emergency buffer | $3,000 | Reserve |
+| **Total** | **$300,000** | |
+
+#### Chief Architect Compensation Schedule
+
+| QTC Price (30d TWAP) | Monthly Salary |
+|---|---|
+| $0.00 — $0.05 | $3,000 USDC |
+| $0.05 — $0.20 | $3,500 USDC |
+| $0.20+ | $5,000 USDC |
+
+- **Recipient:** Touqeer Ahmad (Chief Architect)
+- **Start:** Month 1 after LBP closes
+- **Cap: Maximum 24 months or $120,000 USDC total, whichever comes first.**
+  After cap is reached, DAO votes new rate via standard governance proposal.
+  This prevents indefinite self-payment regardless of QTC price.
+- **Separate from:** Founder vesting (150M QTC) and Genesis allocation (500K QTC)
+- **Runway at $3,000/mo:** 32 months (ops fund covers beyond the 24mo cap)
+
+#### Pre-Mainnet Ops Fund Control — 7-Day Public Timelock
+
+5/7 multisig cannot exist before mainnet (no validators = no Seats 3-7).
+All pre-mainnet ops spending is governed by `TimelockedOpsFund` (built in M14):
+
+1. Founder proposes spend publicly (GitHub + on-chain)
+2. 7-day objection window — anyone can object publicly
+3. No valid objection → spend executes automatically
+4. Objection raised → spend frozen pending community review
+5. **Control auto-transfers to 5/7 multisig at block 100,000
+   (~14 days post-genesis at 2s block time). This is hardcoded
+   in `TimelockedOpsFund` — no action required, no vote needed,
+   no founder can delay it.**
+
+Quarterly spending reports published to `docs/ops-reports/`.
+Any underspend at 12 months goes to DEX LP.
 
 ### Strategic Reserve — 200M QTC (`0xDAO`)
 - **Purpose:** Future development, partnerships, emergency fund
