@@ -2,6 +2,10 @@
 
 > Post-quantum Layer 1 blockchain node — CRYSTALS-Dilithium2 signatures, libp2p gossip, EIP-1559 fee market, JSON-RPC API, multi-validator registry.
 
+**Public Good Statement:** QTC is MIT-licensed public infrastructure. All code, docs, and audit reports are free forever. No patents. No proprietary components. Grant funds are used only for security audits and legal opinions to protect users — not for founder profit.
+
+**Founder:** Touqeer Ahmad — touqeerahmadofficial896@gmail.com — Dunga Bunga, Punjab, Pakistan. Solo developer. Not anonymous. Publicly accountable.
+
 [![CI](https://github.com/quantumchain-core/qc-node/actions/workflows/test.yml/badge.svg)](https://github.com/quantumchain-core/qc-node/actions)
 ![Rust](https://img.shields.io/badge/rust-stable-orange)
 ![License](https://img.shields.io/badge/license-MIT-blue)
