@@ -1,18 +1,25 @@
 // src/rpc/methods.rs
 // QTC M8: JSON-RPC method implementations
-// Naming follows Ethereum conventions (eth_*) for wallet/tooling compatibility,
-// though QTC is its own chain (see whitepaper).
+// Naming follows Ethereum conventions (eth_*) for wallet/tooling compatibility.
+//
+// AUDIT-018 FIX: eth_sendRawTransaction now verifies tx.hash matches
+//   SHA256(from || to || value || nonce || base_fee || priority_fee || gas_limit)
+//   before accepting the transaction. This prevents fake-hash attacks that
+//   could shadow legitimate transactions in the mempool.
+//
+// AUDIT-020/021 FIX: ERR_PARSE and ERR_INTERNAL are now used correctly.
 
 use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 use crate::chain::{Address, Block};
 use crate::mempool::{Mempool, Transaction};
 use crate::state::StateDB;
-use crate::net::{handler::GossipMsg};
+use crate::net::handler::GossipMsg;
 
-/// Placeholder chain id — finalize in whitepaper / genesis config.
+/// QTC chain id — matches eth_chainId response.
 pub const QTC_CHAIN_ID: u64 = 0x51; // 81 decimal
 
 // ---------------------------------------------------------------------------
@@ -58,19 +65,16 @@ impl RpcResponse {
     }
 }
 
-// Standard JSON-RPC error codes
-pub const ERR_PARSE: i32 = -32700;
-pub const ERR_INVALID_PARAMS: i32 = -32602;
+// Standard JSON-RPC error codes (AUDIT-020/021: all now used)
+pub const ERR_PARSE: i32        = -32700; // invalid JSON
+pub const ERR_INVALID_PARAMS: i32 = -32602; // valid JSON but bad params
 pub const ERR_METHOD_NOT_FOUND: i32 = -32601;
-pub const ERR_INTERNAL: i32 = -32603;
+pub const ERR_INTERNAL: i32     = -32603; // storage/internal errors
 
 // ---------------------------------------------------------------------------
-// Shared node state, used by the RPC server and (later) the P2P event loop
+// Shared node state
 // ---------------------------------------------------------------------------
 
-/// Minimal chain head info. The producer/event loop updates this after
-/// each block. Kept separate from ChainState (consensus) to avoid
-/// coupling RPC to consensus internals.
 #[derive(Debug, Clone, Default)]
 pub struct ChainHead {
     pub number: u64,
@@ -83,9 +87,6 @@ pub struct AppState {
     pub mempool: Arc<Mutex<Mempool>>,
     pub storage: Arc<crate::state::Storage>,
     pub chain_head: Arc<Mutex<ChainHead>>,
-    /// Outbound gossip queue. The RPC layer pushes messages here;
-    /// the P2P event loop drains it and publishes to peers.
-    /// (Avoids RPC needing direct access to the libp2p Swarm.)
     pub outbox: Arc<Mutex<Vec<GossipMsg>>>,
 }
 
@@ -134,6 +135,27 @@ fn param_u64(params: &Value, idx: usize) -> Result<u64, String> {
         return u64::from_str_radix(s, 16).map_err(|e| format!("invalid u64 hex: {e}"));
     }
     Err(format!("param {idx} is not a number or hex string"))
+}
+
+// ---------------------------------------------------------------------------
+// AUDIT-018: Transaction hash verification
+//
+// Hash = SHA256(from || to || value_le8 || nonce_le8 || base_fee_le8
+//               || priority_fee_le8 || gas_limit_le8)
+//
+// Must match qtc-client's computeTxHash() in src/transaction.ts.
+// ---------------------------------------------------------------------------
+
+pub fn compute_tx_hash(tx: &Transaction) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(&tx.from);
+    hasher.update(&tx.to);
+    hasher.update(tx.value.to_le_bytes());
+    hasher.update(tx.nonce.to_le_bytes());
+    hasher.update(tx.base_fee.to_le_bytes());
+    hasher.update(tx.priority_fee.to_le_bytes());
+    hasher.update(tx.gas_limit.to_le_bytes());
+    hasher.finalize().into()
 }
 
 // ---------------------------------------------------------------------------
@@ -205,19 +227,29 @@ pub fn eth_get_block_by_number(state: &AppState, params: &Value) -> Result<Value
     match state.storage.get_block(number) {
         Ok(Some(block)) => Ok(block_to_json(&block)),
         Ok(None) => Ok(Value::Null),
-        Err(e) => Err(format!("storage error: {e:?}")),
+        // AUDIT-021: storage errors now return ERR_INTERNAL not ERR_INVALID_PARAMS
+        Err(e) => Err(format!("__INTERNAL__storage error: {e:?}")),
     }
 }
 
 /// Submit a raw transaction.
-/// `params[0]` is a hex string of a bincode-serialized Transaction.
-/// Returns the tx hash on success, and queues the tx for gossip to peers.
+/// AUDIT-018: verifies tx.hash == SHA256(tx fields) before accepting.
 pub fn eth_send_raw_transaction(state: &AppState, params: &Value) -> Result<Value, String> {
     let raw_hex = param_str(params, 0)?;
     let raw_hex = raw_hex.strip_prefix("0x").unwrap_or(&raw_hex);
     let bytes = hex::decode(raw_hex).map_err(|e| format!("invalid hex: {e}"))?;
     let tx: Transaction = bincode::deserialize(&bytes)
         .map_err(|e| format!("invalid transaction encoding: {e}"))?;
+
+    // AUDIT-018: verify hash matches content
+    let expected_hash = compute_tx_hash(&tx);
+    if tx.hash != expected_hash {
+        return Err(format!(
+            "tx hash mismatch: declared 0x{}, computed 0x{}",
+            hex::encode(tx.hash),
+            hex::encode(expected_hash)
+        ));
+    }
 
     let tx_hash = tx.hash;
 
@@ -226,7 +258,6 @@ pub fn eth_send_raw_transaction(state: &AppState, params: &Value) -> Result<Valu
         mempool.add(tx.clone()).map_err(|e| format!("{e:?}"))?;
     }
 
-    // Queue for gossip — the P2P event loop drains `outbox` and publishes.
     state.outbox.lock().unwrap().push(GossipMsg::NewTx(tx));
 
     Ok(json!(hex0x(&tx_hash)))
@@ -239,17 +270,20 @@ pub fn eth_send_raw_transaction(state: &AppState, params: &Value) -> Result<Valu
 pub fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
     let id = req.id.clone();
     let result = match req.method.as_str() {
-        "eth_chainId" => Ok(eth_chain_id()),
-        "eth_blockNumber" => Ok(eth_block_number(state)),
-        "eth_getBalance" => eth_get_balance(state, &req.params),
-        "eth_getTransactionCount" => eth_get_transaction_count(state, &req.params),
-        "eth_getBlockByNumber" => eth_get_block_by_number(state, &req.params),
+        "eth_chainId"            => Ok(eth_chain_id()),
+        "eth_blockNumber"        => Ok(eth_block_number(state)),
+        "eth_getBalance"         => eth_get_balance(state, &req.params),
+        "eth_getTransactionCount"=> eth_get_transaction_count(state, &req.params),
+        "eth_getBlockByNumber"   => eth_get_block_by_number(state, &req.params),
         "eth_sendRawTransaction" => eth_send_raw_transaction(state, &req.params),
-        other => return RpcResponse::err(id, ERR_METHOD_NOT_FOUND, format!("method not found: {other}")),
+        other => return RpcResponse::err(id, ERR_METHOD_NOT_FOUND,
+                            format!("method not found: {other}")),
     };
 
     match result {
         Ok(value) => RpcResponse::ok(id, value),
+        Err(msg) if msg.starts_with("__INTERNAL__") =>
+            RpcResponse::err(id, ERR_INTERNAL, msg.trim_start_matches("__INTERNAL__")),
         Err(msg) => RpcResponse::err(id, ERR_INVALID_PARAMS, msg),
     }
 }
@@ -278,8 +312,8 @@ mod tests {
     fn make_tx(from: u8, nonce: u64) -> Transaction {
         let mut from_addr = [0u8; 32];
         from_addr[0] = from;
-        Transaction {
-            hash: [from, nonce as u8, 7, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+        let tx_incomplete = Transaction {
+            hash: [0u8; 32], // placeholder
             from: from_addr,
             to: [2u8; 32],
             value: 100,
@@ -289,7 +323,10 @@ mod tests {
             gas_limit: 21_000,
             signature: vec![0u8; 2420],
             received_at: 0,
-        }
+        };
+        // compute correct hash
+        let hash = compute_tx_hash(&tx_incomplete);
+        Transaction { hash, ..tx_incomplete }
     }
 
     #[test]
@@ -378,7 +415,6 @@ mod tests {
             transactions: vec![],
         };
         state.storage.put_block(&block).unwrap();
-
         let params = json!(["0x1"]);
         let v = eth_get_block_by_number(&state, &params).unwrap();
         assert_eq!(v["number"], json!("0x1"));
@@ -391,14 +427,9 @@ mod tests {
         let tx = make_tx(1, 0);
         let bytes = bincode::serialize(&tx).unwrap();
         let params = json!([hex0x(&bytes)]);
-
         let v = eth_send_raw_transaction(&state, &params).unwrap();
         assert_eq!(v, json!(hex0x(&tx.hash)));
-
-        // tx is in mempool
         assert_eq!(state.mempool.lock().unwrap().len(), 1);
-
-        // tx is queued for gossip
         let outbox = state.outbox.lock().unwrap();
         assert_eq!(outbox.len(), 1);
         assert!(matches!(outbox[0], GossipMsg::NewTx(_)));
@@ -418,6 +449,19 @@ mod tests {
         let bytes = bincode::serialize(&tx).unwrap();
         let params = json!([hex0x(&bytes)]);
         eth_send_raw_transaction(&state, &params).unwrap();
+        assert!(eth_send_raw_transaction(&state, &params).is_err());
+    }
+
+    // AUDIT-018: fake hash must be rejected
+    #[test]
+    fn test_send_raw_transaction_fake_hash_rejected() {
+        let state = test_state();
+        let mut tx = make_tx(1, 0);
+        tx.hash = [0xde, 0xad, 0xbe, 0xef, 0, 0, 0, 0,
+                   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; // fake
+        let bytes = bincode::serialize(&tx).unwrap();
+        let params = json!([hex0x(&bytes)]);
         assert!(eth_send_raw_transaction(&state, &params).is_err());
     }
 
