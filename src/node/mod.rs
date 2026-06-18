@@ -72,11 +72,32 @@ impl Node {
     fn on_block(&mut self, block: Block) -> HandleResult {
         let head = self.app.chain_head.lock().unwrap().clone();
 
-        // 1. Chain linkage
+        // 1. Chain linkage — parent hash
         if block.header.parent_hash != head.head_hash {
             return HandleResult::BlockRejected(format!(
                 "unknown parent: expected {:?}, got {:?}",
                 head.head_hash, block.header.parent_hash
+            ));
+        }
+
+        // 1b. Block number must be exactly head + 1 (AUDIT-015)
+        if block.header.number != head.number + 1 {
+            return HandleResult::BlockRejected(format!(
+                "bad block number: expected {}, got {}",
+                head.number + 1, block.header.number
+            ));
+        }
+
+        // 1c. Timestamp must not be in the future (AUDIT-016)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        if block.header.timestamp > now + 60 {
+            return HandleResult::BlockRejected(format!(
+                "future timestamp: block={}, now={}, drift={}s",
+                block.header.timestamp, now,
+                block.header.timestamp - now
             ));
         }
 
