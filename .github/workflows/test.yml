@@ -1,4 +1,4 @@
-name: Test M1+M2+M3+M4+M5+M6+M7+M8+M9+M10
+name: Test M1+M2+M3+M4+M5+M6+M7+M8+M9+M10+AuditFix1
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
     - name: Run tests
       run: cargo test --verbose -- --test-threads=1 --nocapture
       env:
-        QC_DB_PATH: /tmp/qc-node-ci
+        QC_DB_PATH: /tmp/qtc-test
 
     - name: Run clippy
       run: cargo clippy -- -D warnings
