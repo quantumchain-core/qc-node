@@ -26,7 +26,9 @@ axum         = "0.7"
 serde_json   = "1.0"
 hex          = "0.4"
 
+# AUDIT-019: RPC rate limiting middleware
+tower        = { version = "0.4", features = ["limit", "util"] }
+
 [dev-dependencies]
 tokio    = { version = "1.35", features = ["macros", "rt-multi-thread"] }
 tempfile = "3.8"
-tower    = { version = "0.4", features = ["util"] }
