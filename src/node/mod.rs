@@ -40,7 +40,9 @@ impl Node {
         if head.number == 0 && head.head_hash == [0u8; 32] {
             let genesis = genesis_block();
             if self.app.storage.get_block(0).ok().flatten().is_none() {
-                let _ = self.app.storage.put_block(&genesis);
+                if let Err(e) = self.app.storage.put_block(&genesis) {
+                    eprintln!("WARNING: failed to persist genesis block: {e:?}");
+                }
             }
             head.head_hash = genesis.hash();
         }
