@@ -12,7 +12,6 @@ pub use methods::{AppState, ChainHead, RpcRequest, RpcResponse};
 
 use axum::{routing::post, Json, Router};
 use std::time::Duration;
-use tower::ServiceBuilder;
 use tower::limit::RateLimitLayer;
 
 const DEFAULT_RATE_LIMIT: u64 = 100;
@@ -25,11 +24,7 @@ pub fn router(state: AppState) -> Router {
 
     Router::new()
         .route("/", post(handle_rpc))
-        .layer(
-            ServiceBuilder::new()
-                .layer(RateLimitLayer::new(rate_limit, Duration::from_secs(1)))
-                .into_inner()
-        )
+        .layer(RateLimitLayer::new(rate_limit, Duration::from_secs(1)))
         .with_state(state)
 }
 
