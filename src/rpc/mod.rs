@@ -28,6 +28,7 @@ pub fn router(state: AppState) -> Router {
         .layer(
             ServiceBuilder::new()
                 .layer(RateLimitLayer::new(rate_limit, Duration::from_secs(1)))
+                .into_inner()
         )
         .with_state(state)
 }
