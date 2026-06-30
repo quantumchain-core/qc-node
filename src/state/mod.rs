@@ -211,4 +211,99 @@ mod tests {
         state.set_account(bob, Account { balance: 0, nonce: 1, ..Default::default() });
         assert_eq!(state.accounts.len(), 2);
     }
+
+    // AUDIT-008 regression tests: coinbase overlap cases.
+    // These exercise the exact bug class AUDIT-008 fixed — a naive
+    // sequential read-modify-write of sender/recipient/coinbase would
+    // silently lose balance when addresses overlap. Verifying via total
+    // supply conservation: total balance across all accounts must be
+    // unchanged after a transfer (gas fees + value just move between
+    // existing accounts, nothing is created or destroyed).
+
+    fn total_balance(state: &StateDB, addrs: &[Address]) -> u128 {
+        addrs.iter().map(|a| state.get_account(a).balance).sum()
+    }
+
+    #[test]
+    fn test_coinbase_is_sender_balance_conserved() {
+        // tx.from == coinbase: sender pays gas to themselves (net: only
+        // value moves to recipient, gas_cost should return to sender).
+        let mut state = StateDB::new();
+        let alice: Address = [1u8; 32]; // sender AND coinbase
+        let bob: Address = [2u8; 32];   // recipient
+        state.set_account(alice, Account { balance: 1_000_000, nonce: 0, ..Default::default() });
+
+        let tx = make_tx(alice, bob, 100, 0);
+        let block = make_block(vec![tx], 21);
+        let before = total_balance(&state, &[alice, bob]);
+
+        Executor::execute_block(&mut state, &block, &alice).unwrap();
+
+        let after = total_balance(&state, &[alice, bob]);
+        assert_eq!(before, after, "total supply must be conserved when sender == coinbase");
+        // alice paid gas_cost (21) but it came right back as coinbase fee,
+        // net effect: alice only loses `value` (100) to bob
+        assert_eq!(state.get_account(&alice).balance, 1_000_000 - 100);
+        assert_eq!(state.get_account(&bob).balance, 100);
+    }
+
+    #[test]
+    fn test_coinbase_is_recipient_balance_conserved() {
+        // tx.to == coinbase: recipient is also the fee beneficiary
+        // (receives both the transferred value AND the gas fee).
+        let mut state = StateDB::new();
+        let alice: Address = [1u8; 32]; // sender
+        let bob: Address = [2u8; 32];   // recipient AND coinbase
+        state.set_account(alice, Account { balance: 1_000_000, nonce: 0, ..Default::default() });
+
+        let tx = make_tx(alice, bob, 100, 0);
+        let block = make_block(vec![tx], 21);
+        let before = total_balance(&state, &[alice, bob]);
+
+        Executor::execute_block(&mut state, &block, &bob).unwrap();
+
+        let after = total_balance(&state, &[alice, bob]);
+        assert_eq!(before, after, "total supply must be conserved when recipient == coinbase");
+        // bob should receive value (100) + gas fee (21) = 121
+        assert_eq!(state.get_account(&bob).balance, 121);
+        assert_eq!(state.get_account(&alice).balance, 1_000_000 - 100 - 21);
+    }
+
+    #[test]
+    fn test_self_transfer_balance_conserved() {
+        // tx.from == tx.to: alice sends to herself. Only gas_cost should
+        // leave her balance (value transfers to herself, net zero).
+        let mut state = StateDB::new();
+        let alice: Address = [1u8; 32];
+        let coinbase: Address = [9u8; 32];
+        state.set_account(alice, Account { balance: 1_000_000, nonce: 0, ..Default::default() });
+
+        let tx = make_tx(alice, alice, 100, 0); // from == to == alice
+        let block = make_block(vec![tx], 21);
+
+        Executor::execute_block(&mut state, &block, &coinbase).unwrap();
+
+        // alice only loses gas_cost; value transfer to self nets to zero
+        assert_eq!(state.get_account(&alice).balance, 1_000_000 - 21);
+        assert_eq!(state.get_account(&coinbase).balance, 21);
+    }
+
+    #[test]
+    fn test_self_transfer_and_self_coinbase_balance_conserved() {
+        // The fully degenerate case: tx.from == tx.to == coinbase.
+        // Alice sends to herself AND collects her own gas fee.
+        // Net effect: balance unchanged.
+        let mut state = StateDB::new();
+        let alice: Address = [1u8; 32];
+        state.set_account(alice, Account { balance: 1_000_000, nonce: 0, ..Default::default() });
+
+        let tx = make_tx(alice, alice, 100, 0); // from == to == alice
+        let block = make_block(vec![tx], 21);
+
+        Executor::execute_block(&mut state, &block, &alice).unwrap();
+
+        // value returns to self, gas fee returns to self: net zero change
+        assert_eq!(state.get_account(&alice).balance, 1_000_000);
+        assert_eq!(state.get_account(&alice).nonce, 1);
+    }
 }
