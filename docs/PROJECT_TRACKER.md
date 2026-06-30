@@ -132,6 +132,34 @@ Topics to rotate:
 
 ---
 
+## Strategic Decision — Testnet Before Mainnet (June 2026)
+
+**Decision: Launch QTC Testnet first. Mainnet only after grant-funded
+professional audit + legal opinion.**
+
+Why: testnet tokens (tQTC) have zero monetary value by design, which means:
+- Zero legal risk -- cannot be classified as a security
+- No audit/legal opinion required before launch
+- $0 cost, launches immediately on Oracle Cloud free tier
+- Real multi-node testing before any money is at stake
+- Strengthens grant applications ("live testnet with N validators"
+  is far more fundable than "we plan to launch")
+
+```
+NOW        Testnet launch (replaces "M13 mainnet prep" framing)
+Week 1-2   Run testnet, invite community, find + fix bugs
+Week 3-4   M14 -- vesting/governance, tested on testnet first
+Month 2    Apply for grants citing live testnet + community validators
+Month 3    Professional audit (funded by grant)
+Month 4    Mainnet launch (M15) -- real money, real LBP, audit complete
+```
+
+**Chain ID separation:** testnet and mainnet use different chain_id
+values so wallets/tools never confuse them. Selected via QC_NETWORK
+env var (`testnet` default, `mainnet` explicit).
+
+---
+
 ## Financial Reality
 
 | Item | Status |
