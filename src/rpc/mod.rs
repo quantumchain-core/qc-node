@@ -12,6 +12,7 @@ pub use methods::{AppState, ChainHead, RpcRequest, RpcResponse};
 
 use axum::{routing::post, Json, Router};
 use std::time::Duration;
+use tower::ServiceBuilder;
 use tower::limit::RateLimitLayer;
 
 const DEFAULT_RATE_LIMIT: u64 = 100;
@@ -24,7 +25,7 @@ pub fn router(state: AppState) -> Router {
 
     Router::new()
         .route("/", post(handle_rpc))
-        .layer(RateLimitLayer::new(rate_limit, Duration::from_secs(1)))
+        .layer(ServiceBuilder::new().layer(RateLimitLayer::new(rate_limit, Duration::from_secs(1))))
         .with_state(state)
 }
 
@@ -110,4 +111,4 @@ mod tests {
         let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(v["error"]["code"], json!(methods::ERR_METHOD_NOT_FOUND));
     }
-}
+                }
