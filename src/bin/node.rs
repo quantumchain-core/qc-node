@@ -130,6 +130,16 @@ fn load_coinbase(pk: &[u8]) -> Result<Address, Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // --- Network banner (testnet-first strategy, June 2026) ---
+    // QC_NETWORK defaults to "testnet" if unset. Mainnet requires explicit opt-in.
+    let network = std::env::var("QC_NETWORK").unwrap_or_else(|_| "testnet".to_string());
+    println!("================================================");
+    println!("  QTC NODE -- network: {}", network.to_uppercase());
+    if network != "mainnet" {
+        println!("  (testnet tokens have NO monetary value)");
+    }
+    println!("================================================");
+
     // --- Storage & shared state ---
     let storage = Storage::new()?;
     let state_db = storage.get_state()?.unwrap_or_default();
