@@ -20,7 +20,21 @@ use crate::state::StateDB;
 use crate::net::handler::GossipMsg;
 
 /// QTC chain id — matches eth_chainId response.
-pub const QTC_CHAIN_ID: u64 = 0x51; // 81 decimal
+/// Chain ID separation (testnet-first strategy, June 2026).
+/// Selected at runtime via QC_NETWORK env var: "testnet" (default) or "mainnet".
+/// This prevents wallets/tools from ever confusing testnet and mainnet --
+/// a transaction signed for one chain_id is invalid on the other.
+pub const TESTNET_CHAIN_ID: u64 = 0x74; // 116 decimal ("t" for testnet, informal)
+pub const MAINNET_CHAIN_ID: u64 = 0x51; // 81 decimal (unchanged from M8)
+
+/// Resolve the active chain id from QC_NETWORK env var.
+/// Defaults to testnet -- mainnet must be explicitly opted into.
+pub fn active_chain_id() -> u64 {
+    match std::env::var("QC_NETWORK").as_deref() {
+        Ok("mainnet") => MAINNET_CHAIN_ID,
+        _ => TESTNET_CHAIN_ID, // default: testnet, including unset or any other value
+    }
+}
 
 // ---------------------------------------------------------------------------
 // JSON-RPC 2.0 envelope
@@ -198,7 +212,7 @@ pub fn block_to_json(block: &Block) -> Value {
 // ---------------------------------------------------------------------------
 
 pub fn eth_chain_id() -> Value {
-    json!(u64_to_hex(QTC_CHAIN_ID))
+    json!(u64_to_hex(active_chain_id()))
 }
 
 pub fn eth_block_number(state: &AppState) -> Value {
@@ -330,9 +344,26 @@ mod tests {
     }
 
     #[test]
-    fn test_chain_id() {
+    fn test_chain_id_defaults_to_testnet() {
+        std::env::remove_var("QC_NETWORK"); // ensure clean default
         let v = eth_chain_id();
-        assert_eq!(v, json!(u64_to_hex(QTC_CHAIN_ID)));
+        assert_eq!(v, json!(u64_to_hex(TESTNET_CHAIN_ID)));
+    }
+
+    #[test]
+    fn test_chain_id_mainnet_when_explicit() {
+        std::env::set_var("QC_NETWORK", "mainnet");
+        let v = eth_chain_id();
+        assert_eq!(v, json!(u64_to_hex(MAINNET_CHAIN_ID)));
+        std::env::remove_var("QC_NETWORK"); // cleanup -- avoid leaking into other tests
+    }
+
+    #[test]
+    fn test_chain_id_unknown_network_value_falls_back_to_testnet() {
+        std::env::set_var("QC_NETWORK", "garbage");
+        let v = eth_chain_id();
+        assert_eq!(v, json!(u64_to_hex(TESTNET_CHAIN_ID)));
+        std::env::remove_var("QC_NETWORK");
     }
 
     #[test]
@@ -481,6 +512,7 @@ mod tests {
 
     #[test]
     fn test_dispatch_chain_id() {
+        std::env::remove_var("QC_NETWORK"); // ensure clean default
         let state = test_state();
         let req = RpcRequest {
             jsonrpc: "2.0".into(),
@@ -489,6 +521,6 @@ mod tests {
             id: json!(1),
         };
         let resp = dispatch(&state, req);
-        assert_eq!(resp.result.unwrap(), json!(u64_to_hex(QTC_CHAIN_ID)));
+        assert_eq!(resp.result.unwrap(), json!(u64_to_hex(TESTNET_CHAIN_ID)));
     }
 }
