@@ -150,7 +150,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(v["result"], json!(methods::u64_to_hex(methods::QTC_CHAIN_ID)));
+        assert_eq!(v["result"], json!(methods::u64_to_hex(methods::TESTNET_CHAIN_ID)));
         assert_eq!(v["id"], json!(1));
     }
 
