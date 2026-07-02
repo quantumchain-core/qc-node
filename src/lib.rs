@@ -6,3 +6,4 @@ pub mod consensus; // M5 - done
 pub mod state;     // M6 - done
 pub mod rpc;       // M8 - JSON-RPC HTTP server
 pub mod node;      // M9 - event-loop core (sync, unit-testable)
+pub mod vesting;   // M14 - cliff/linear vesting + TimelockedOpsFund
