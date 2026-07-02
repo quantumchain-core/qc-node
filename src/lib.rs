@@ -1,9 +1,10 @@
-pub mod crypto;    // M1 - locked
-pub mod net;       // M2/M7 - swarm + gossip handler
-pub mod chain;     // M3 - done
-pub mod mempool;   // M4 - done
-pub mod consensus; // M5 - done
-pub mod state;     // M6 - done
-pub mod rpc;       // M8 - JSON-RPC HTTP server
-pub mod node;      // M9 - event-loop core (sync, unit-testable)
-pub mod vesting;   // M14 - cliff/linear vesting + TimelockedOpsFund
+pub mod crypto;     // M1
+pub mod net;        // M2/M7
+pub mod chain;      // M3
+pub mod mempool;    // M4
+pub mod consensus;  // M5
+pub mod state;      // M6
+pub mod rpc;        // M8
+pub mod node;       // M9
+pub mod vesting;    // M14 - vesting + TimelockedOpsFund
+pub mod governance; // M14 - proposals, 5/7 multisig, immutable rules
