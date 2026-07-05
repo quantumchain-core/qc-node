@@ -52,6 +52,11 @@ impl ValidatorRegistry {
     pub fn get(&self, addr: &Address) -> Option<&Vec<u8>> {
         self.validators.get(addr)
     }
+    pub fn get_index(&self, addr: &Address) -> Option<u64> {
+    let mut keys: Vec<Address> = self.validators.keys().cloned().collect();
+    keys.sort();
+    keys.iter().position(|a| a == addr).map(|i| i as u64)
+    }
 
     pub fn len(&self) -> usize {
         self.validators.len()
