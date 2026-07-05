@@ -136,8 +136,23 @@ impl Consensus {
         Ok(())
     }
 
-    fn is_proposer(&self, _slot: u64) -> bool {
-        true // TODO: VRF in M11+
+    fn is_proposer(&self, slot: u64) -> bool {
+    // Round-robin proposer selection.
+    // Slot % validator_count determines which validator proposes.
+    // This fixes the always-true bug that would cause all validators
+    // to produce blocks simultaneously (chain fork on slot 1).
+    // TODO M16: replace with VRF-based selection for unpredictability.
+    let count = self.registry.len() as u64;
+    if count == 0 {
+        return false;
+    }
+    if count == 1 {
+        return true; // single validator mode
+    }
+    let my_index = self.registry
+        .get_index(&self.address)
+        .unwrap_or(u64::MAX);
+    slot % count == my_index
     }
 
     fn sign_header_bytes(&self) -> Vec<u8> {
