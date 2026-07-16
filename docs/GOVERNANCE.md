@@ -187,3 +187,27 @@ native Rust governance continues to work alongside it.
 **Decision made:** June 2026
 **Decided by:** Touqeer Ahmad (Founder + Chief Architect)
 **Recorded here as permanent architectural record.**
+---
+
+## Architecture Decision Record — July 2026
+
+**Pure Fair Launch Model Adopted:**
+QTC switches from LBP (public token sale) to pure fair launch.
+No tokens are sold to the public at any point before or during mainnet.
+
+**Rationale:**
+- Zero legal risk — no securities sale without audit/legal opinion
+- Testnet and mainnet can launch immediately without $50K audit
+- Audit and legal opinion obtained post-launch via grants
+- Aligns with Bitcoin's original fair launch philosophy
+- MIT licensed, community owned from block 1
+
+**Chief Architect Salary Source:**
+Touqeer Ahmad's salary comes from the Ecosystem/Grants pool (17%, 170M QTC)
+via standard 5/7 multisig governance vote — not from a public token sale.
+USDC salary begins only after grant funding is received.
+Pre-grant: QTC compensation at market rate.
+
+**Decision made:** July 2026
+**Decided by:** Touqeer Ahmad (Founder + Chief Architect)
+**Recorded here as permanent architectural record.**
