@@ -1,60 +1,84 @@
 {
   "_readme": [
-    "QTC Mainnet Genesis Configuration",
-    "DO NOT MODIFY after mainnet launch.",
+    "QTC Mainnet Genesis — Pure Fair Launch v2.0",
+    "No tokens sold. All tokens earned through work.",
     "Chain ID: 0x51 (81 decimal)",
-    "This file is locked at mainnet launch (M15).",
-    "Validators added here are genesis validators",
-    "and receive the 0xAdvisors allocation per TOKENOMICS.md."
+    "TOKENOMICS.md hash: 487781bdad2f640fda1bdd5e4259de33380219eb22c798c60e5b31d523ff80b2"
   ],
   "network": "mainnet",
   "chain_id": "0x51",
-  "genesis_time": "TBD — set at mainnet launch",
+  "genesis_time": "TBD",
+  "model": "pure_fair_launch",
   "total_supply": 1000000000,
-  "supply_unit": "QTC (1 QTC = 1,000,000,000 nano-QTC)",
-  "block_time_secs": 2,
-  "multisig_transfer_block": 100000,
-  "founder": {
-    "name": "Touqeer Ahmad",
-    "email": "touqeerahmadofficial896@gmail.com",
-    "github": "github.com/quantumchain-core",
-    "allocation_qtc": 150000000,
-    "cliff_months": 12,
-    "vesting_years": 4
-  },
-  "genesis_developer": {
-    "name": "Touqeer Ahmad",
-    "role": "Chief Architect",
-    "allocation_qtc": 500000,
-    "cliff_months": 6,
-    "vesting_years": 2,
-    "source_pool": "0xAdvisors"
-  },
   "token_allocations": {
-    "community_emissions": 380000000,
-    "ecosystem_foundation": 150000000,
-    "founder_vesting": 150000000,
-    "team_future": 40000000,
-    "advisors_genesis": 30000000,
-    "airdrop": 10000000,
-    "liquidity_lbp": 40000000,
-    "strategic_reserve_dao": 200000000
+    "founder_vesting": {
+      "amount": 150000000,
+      "wallet": "0xFounderVesting",
+      "cliff_months": 12,
+      "vesting_years": 4,
+      "recipient": "Touqeer Ahmad"
+    },
+    "validators_pos": {
+      "amount": 300000000,
+      "wallet": "0xValidators",
+      "model": "step_down_emissions_10yr",
+      "year_1": 50000000,
+      "year_2": 42000000,
+      "year_3": 36000000,
+      "year_4": 30000000,
+      "year_5": 25000000,
+      "year_6": 20000000,
+      "year_7": 18000000,
+      "year_8": 16000000,
+      "year_9": 14000000,
+      "year_10": 12000000,
+      "remainder_to_dao": 37000000
+    },
+    "ecosystem_grants": {
+      "amount": 170000000,
+      "wallet": "0xEcosystem",
+      "control": "5/7 multisig",
+      "uses": ["audit", "legal", "architect_salary", "developer_grants"]
+    },
+    "strategic_reserve": {
+      "amount": 200000000,
+      "wallet": "0xDAO",
+      "control": "DAO vote + 5/7 multisig + 51% validator quorum"
+    },
+    "dapp_developers": {
+      "amount": 80000000,
+      "wallet": "0xDevRewards",
+      "model": "gas_volume_proportional",
+      "pre_evm": "ecosystem_grants_via_dao"
+    },
+    "community_airdrop": {
+      "amount": 50000000,
+      "wallet": "0xAirdrop",
+      "breakdown": {
+        "genesis_developer": 500000,
+        "testnet_validators": 10000000,
+        "early_community": 20000000,
+        "future_programs": 19500000
+      }
+    },
+    "liquidity_bootstrap": {
+      "amount": 50000000,
+      "wallet": "0xLiquidity",
+      "model": "dex_lp_rewards_no_lbp"
+    }
   },
   "validators": [
     {
-      "_comment": "Genesis validators added here after testnet proves stable.",
-      "_comment2": "Each entry requires: address (SHA3-256 of pubkey) + pubkey (Dilithium2, 1312 bytes).",
-      "_comment3": "Maximum 100 genesis validators per TOKENOMICS.md.",
-      "_comment4": "All genesis validators share the 30M QTC advisors pool equally.",
-      "_comment5": "Minimum stake to remain active: 10,000 QTC."
+      "_comment": "Add validator entries after testnet proves stable.",
+      "_comment2": "Format: { address: 0x<64hex>, pubkey: 0x<2624hex> }",
+      "_comment3": "Max 100 genesis validators per TOKENOMICS.md v2.0"
     }
   ],
   "requirements_before_mainnet": [
-    "Professional security audit (OtterSec/Halborn/Sec3)",
-    "Legal utility token opinion from crypto lawyer",
-    "Minimum 3 independent validator nodes running",
     "Testnet stable for minimum 30 days",
-    "TOKENOMICS.md hash verified: c31a535ec6980f645a262303e6a3febbe77486c9092e4ac72944711d6459b2fa",
-    "SECURITY_AUDIT.md hash verified: ef7156453b22f893351dfccce98dbfd9426871dcdf355c8d3a2f6c415dabed5b"
+    "Minimum 3 independent validator nodes",
+    "Self-audit published (SECURITY_AUDIT.md)",
+    "TOKENOMICS.md v2.0 hash verified",
+    "NOTE: Professional audit + legal opinion obtained POST-mainnet via grants"
   ]
 }
