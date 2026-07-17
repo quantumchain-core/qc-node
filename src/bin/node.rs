@@ -1,4 +1,4 @@
-// src/bin/node.rs - Final Corrected Keystore
+// src/bin/node.rs - Final Working Keystore Encryption
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::path::PathBuf;
@@ -16,7 +16,8 @@ use qc_node::node::Node;
 use qc_node::rpc::{self, AppState, ChainHead};
 use qc_node::state::Storage;
 
-use argon2::{Argon2, PasswordHasher, Params, SaltString};
+use argon2::{Argon2, PasswordHasher};
+use argon2::password_hash::{SaltString, rand_core::OsRng as ArgonOsRng};
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use aes_gcm::aead::{Aead, OsRng, AeadCore};
 use rand::{RngCore, Rng};
@@ -151,4 +152,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = net::publish(&mut swarm, &msg);
         }
     }
-                                                }
+}
