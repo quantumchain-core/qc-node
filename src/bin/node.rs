@@ -1,4 +1,4 @@
-// src/bin/node.rs - FIXED with Encrypted Keystore
+// src/bin/node.rs - Corrected Keystore Encryption
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::path::PathBuf;
@@ -18,8 +18,8 @@ use qc_node::state::Storage;
 
 use argon2::{Argon2, PasswordHasher, Params};
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
-use aes_gcm::aead::{Aead, OsRng};
-use rand::RngCore;
+use aes_gcm::aead::{Aead, OsRng, AeadCore};
+use rand::{RngCore, Rng};
 
 #[derive(Serialize, Deserialize)]
 struct Keystore {
@@ -45,13 +45,14 @@ fn load_or_generate_keypair() -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::
         let ks: Keystore = serde_json::from_str(&json)?;
 
         let salt = hex::decode(&ks.salt_hex)?;
-        let nonce = Nonce::from_slice(&hex::decode(&ks.nonce_hex)?);
+        let nonce_bytes = hex::decode(&ks.nonce_hex)?;
+        let nonce = Nonce::from_slice(&nonce_bytes);
 
         let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, Params::default());
-        let password_hash = argon2.hash_password(password.as_bytes(), &salt[..])?;
-        let key = password_hash.hash.ok_or("key derivation failed")?;
+        let password_hash = argon2.hash_password(password.as_bytes(), &salt)?;
+        let key = password_hash.hash.ok_or("key derivation failed")?.as_bytes();
 
-        let cipher = Aes256Gcm::new_from_slice(&key[..32])?;
+        let cipher = Aes256Gcm::new_from_slice(key)?;
         let ciphertext = hex::decode(&ks.encrypted_sk)?;
         let sk = cipher.decrypt(nonce, ciphertext.as_ref())?;
 
@@ -59,13 +60,14 @@ fn load_or_generate_keypair() -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::
         Ok((hex::decode(&ks.pk_hex)?, sk))
     } else {
         let (pk, sk) = generate_keypair();
-        let salt: [u8; 16] = rand::thread_rng().gen();
+        let mut salt = [0u8; 16];
+        rand::thread_rng().fill_bytes(&mut salt);
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
         let argon2 = Argon2::default();
         let password_hash = argon2.hash_password(password.as_bytes(), &salt)?;
-        let key = password_hash.hash.ok_or("key derivation failed")?;
+        let key = password_hash.hash.ok_or("key derivation failed")?.as_bytes();
 
-        let cipher = Aes256Gcm::new_from_slice(&key[..32])?;
+        let cipher = Aes256Gcm::new_from_slice(key)?;
         let encrypted = cipher.encrypt(&nonce, sk.as_ref())?;
 
         let ks = Keystore {
@@ -124,13 +126,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut node = Node::new(app_state.clone(), producer, registry);
 
-    // RPC
     let rpc_app = rpc::router(app_state.clone());
     let rpc_addr = std::env::var("QC_RPC_ADDR").unwrap_or_else(|_| "0.0.0.0:8545".to_string());
     let listener = tokio::net::TcpListener::bind(&rpc_addr).await?;
     tokio::spawn(async move { let _ = axum::serve(listener, rpc_app).await; });
 
-    // P2P + Loop (rest remains same)
     let mut swarm = net::new_swarm().await?;
     let mut block_timer = tokio::time::interval(Duration::from_secs(BLOCK_TIME_SECS));
 
@@ -150,4 +150,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = net::publish(&mut swarm, &msg);
         }
     }
-}
+                }
