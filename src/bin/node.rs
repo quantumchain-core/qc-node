@@ -1,4 +1,4 @@
-// src/bin/node.rs - Corrected Keystore Encryption
+// src/bin/node.rs - Final Corrected Keystore
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::path::PathBuf;
@@ -16,7 +16,7 @@ use qc_node::node::Node;
 use qc_node::rpc::{self, AppState, ChainHead};
 use qc_node::state::Storage;
 
-use argon2::{Argon2, PasswordHasher, Params};
+use argon2::{Argon2, PasswordHasher, Params, SaltString};
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use aes_gcm::aead::{Aead, OsRng, AeadCore};
 use rand::{RngCore, Rng};
@@ -45,11 +45,11 @@ fn load_or_generate_keypair() -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::
         let ks: Keystore = serde_json::from_str(&json)?;
 
         let salt = hex::decode(&ks.salt_hex)?;
-        let nonce_bytes = hex::decode(&ks.nonce_hex)?;
-        let nonce = Nonce::from_slice(&nonce_bytes);
+        let nonce = Nonce::from_slice(&hex::decode(&ks.nonce_hex)?);
 
-        let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, Params::default());
-        let password_hash = argon2.hash_password(password.as_bytes(), &salt)?;
+        let argon2 = Argon2::default();
+        let salt_str = SaltString::from_b64(&base64::encode(&salt))?;
+        let password_hash = argon2.hash_password(password.as_bytes(), &salt_str)?;
         let key = password_hash.hash.ok_or("key derivation failed")?.as_bytes();
 
         let cipher = Aes256Gcm::new_from_slice(key)?;
@@ -64,7 +64,8 @@ fn load_or_generate_keypair() -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::
         rand::thread_rng().fill_bytes(&mut salt);
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
         let argon2 = Argon2::default();
-        let password_hash = argon2.hash_password(password.as_bytes(), &salt)?;
+        let salt_str = SaltString::encode_b64(&salt);
+        let password_hash = argon2.hash_password(password.as_bytes(), &salt_str)?;
         let key = password_hash.hash.ok_or("key derivation failed")?.as_bytes();
 
         let cipher = Aes256Gcm::new_from_slice(key)?;
@@ -150,4 +151,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = net::publish(&mut swarm, &msg);
         }
     }
-                }
+                                                }
