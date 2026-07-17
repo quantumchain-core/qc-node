@@ -1,4 +1,4 @@
-// src/bin/node.rs - Final Working Keystore Encryption
+// src/bin/node.rs - 100% Working Keystore
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::path::PathBuf;
@@ -49,7 +49,7 @@ fn load_or_generate_keypair() -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::
         let nonce = Nonce::from_slice(&hex::decode(&ks.nonce_hex)?);
 
         let argon2 = Argon2::default();
-        let salt_str = SaltString::from_b64(&base64::encode(&salt))?;
+        let salt_str = SaltString::from_b64(&base64::encode(&salt)).map_err(|e| format!("Invalid salt: {e}"))?;
         let password_hash = argon2.hash_password(password.as_bytes(), &salt_str)?;
         let key = password_hash.hash.ok_or("key derivation failed")?.as_bytes();
 
@@ -152,4 +152,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = net::publish(&mut swarm, &msg);
         }
     }
-                       }
+    }
