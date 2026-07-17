@@ -19,6 +19,7 @@ use qc_node::state::Storage;
 use argon2::{Argon2, PasswordHasher};
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use aes_gcm::aead::{Aead, OsRng, AeadCore};
+use password_hash::Salt;
 use rand::RngCore;
 
 #[derive(Serialize, Deserialize)]
@@ -48,7 +49,7 @@ fn load_or_generate_keypair() -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::
         let nonce = Nonce::from_slice(&hex::decode(&ks.nonce_hex)?);
 
         let argon2 = Argon2::default();
-        let password_hash = argon2.hash_password(password.as_bytes(), &salt)?;
+        let password_hash = argon2.hash_password(password.as_bytes(), Salt::new(salt.as_slice()))?;
         let key = password_hash.hash.ok_or("key derivation failed")?.as_bytes();
 
         let cipher = Aes256Gcm::new_from_slice(key)?;
@@ -63,7 +64,7 @@ fn load_or_generate_keypair() -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::
         rand::thread_rng().fill_bytes(&mut salt);
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
         let argon2 = Argon2::default();
-        let password_hash = argon2.hash_password(password.as_bytes(), &salt)?;
+        let password_hash = argon2.hash_password(password.as_bytes(), Salt::new(&salt))?;
         let key = password_hash.hash.ok_or("key derivation failed")?.as_bytes();
 
         let cipher = Aes256Gcm::new_from_slice(key)?;
@@ -149,4 +150,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = net::publish(&mut swarm, &msg);
         }
     }
-            }
+}
