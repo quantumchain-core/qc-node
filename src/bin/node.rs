@@ -1,4 +1,4 @@
-// src/bin/node.rs - Final Working Version
+// src/bin/node.rs - Final Working Keystore Encryption
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::path::PathBuf;
@@ -17,10 +17,10 @@ use qc_node::rpc::{self, AppState, ChainHead};
 use qc_node::state::Storage;
 
 use argon2::{Argon2, PasswordHasher};
-use argon2::password_hash::{SaltString, rand_core::OsRng as ArgonOsRng};
+use argon2::password_hash::SaltString;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use aes_gcm::aead::{Aead, OsRng, AeadCore};
-use rand::{RngCore, Rng};
+use rand::RngCore;
 
 #[derive(Serialize, Deserialize)]
 struct Keystore {
@@ -152,4 +152,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = net::publish(&mut swarm, &msg);
         }
     }
-}
+                       }
