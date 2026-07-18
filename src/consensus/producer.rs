@@ -95,9 +95,9 @@ mod tests {
     }
 
     fn make_tx(from: u8, nonce: u64) -> Transaction {
-        let mut from_addr = [0u8; 32];
-        from_addr[0] = from;
-        Transaction {
+        let (pk, sk) = generate_keypair();
+        let from_addr = crate::consensus::address_from_pubkey(&pk);
+        let mut tx = Transaction {
             hash: [from, nonce as u8, 0, 0, 0, 0, 0, 0,
                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -108,9 +108,12 @@ mod tests {
             base_fee: 1_000,
             priority_fee: 100,
             gas_limit: 21_000,
-            signature: vec![0u8; 2420],
+            signature: Vec::new(),
             received_at: 0,
-        }
+            from_pubkey: pk,
+        };
+        tx.signature = crate::crypto::sign(&sk, &tx.signable_bytes());
+        tx
     }
 
     fn genesis() -> Block {
@@ -144,18 +147,17 @@ mod tests {
         });
 
         let mut state = StateDB::new();
-        let mut from_addr = [0u8; 32];
-        from_addr[0] = 1;
+        let tx = make_tx(1, 0);
 
         // gas_cost = gas_limit * base_fee = 21_000 * 1_000 = 21_000_000
         // value = 10 -> total needed = 21_000_010
-        state.set_account(from_addr, Account {
+        state.set_account(tx.from, Account {
             balance: 100_000_000,
             nonce: 0,
             ..Default::default()
         });
 
-        mempool.add(make_tx(1, 0)).unwrap();
+        mempool.add(tx).unwrap();
         let storage = Storage::new().unwrap();
         let parent = genesis();
 
@@ -181,15 +183,14 @@ mod tests {
         });
 
         let mut state = StateDB::new();
-        let mut from_addr = [0u8; 32];
-        from_addr[0] = 1;
-        state.set_account(from_addr, Account {
+        let tx = make_tx(1, 0);
+        state.set_account(tx.from, Account {
             balance: 100_000_000,
             nonce: 0,
             ..Default::default()
         });
 
-        mempool.add(make_tx(1, 0)).unwrap();
+        mempool.add(tx).unwrap();
         let storage = Storage::new().unwrap();
         let parent = genesis();
 
