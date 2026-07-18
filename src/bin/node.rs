@@ -16,7 +16,7 @@ use qc_node::node::Node;
 use qc_node::rpc::{self, AppState, ChainHead};
 use qc_node::state::Storage;
 
-use argon2::{Argon2, PasswordHasher, PasswordHash};
+use argon2::{Argon2, PasswordHasher};
 use argon2::password_hash::SaltString;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use aes_gcm::aead::{Aead, OsRng, AeadCore};
