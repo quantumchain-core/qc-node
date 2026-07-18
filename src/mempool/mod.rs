@@ -38,6 +38,14 @@ pub struct Transaction {
     pub gas_limit: u64,
     pub signature: Vec<u8>, // Dilithium2 signature bytes (2420 bytes for M1)
     pub received_at: u64, // unix timestamp, for eviction ordering
+    /// AUDIT-FIX (signature verification): sender's full Dilithium2 public
+    /// key (1312 bytes). Required because `from` is only SHA3-256(pubkey) —
+    /// a one-way hash — and Dilithium2 signatures don't support recovering
+    /// the public key from a signature the way ECDSA does. Appended as the
+    /// LAST field (not part of the signed byte layout — see
+    /// `signable_bytes()` — so it doesn't change what wallets/faucet sign,
+    /// only what they must additionally attach to the wire payload).
+    pub from_pubkey: Vec<u8>,
 }
 
 impl Transaction {
@@ -50,6 +58,37 @@ impl Transaction {
     /// Total max fee the sender is willing to pay.
     pub fn max_fee(&self) -> u64 {
         self.base_fee
+    }
+
+    /// The exact byte layout that gets Dilithium2-signed by the wallet/
+    /// faucet. MUST match qtc-client's `serializeTransaction()` called with
+    /// `signature: empty bytes` and `receivedAt: 0` byte-for-byte — see
+    /// qtc-client/src/transaction.ts. Any change here requires a matching
+    /// change there, and vice versa, or every valid signature will start
+    /// failing verification.
+    ///
+    /// Layout: hash(32) || from(32) || to(32) || value(u64 LE)
+    ///       || nonce(u64 LE) || base_fee(u64 LE) || priority_fee(u64 LE)
+    ///       || gas_limit(u64 LE) || sig_len_prefix(u64 LE, always 0 here)
+    ///       || received_at(u64 LE, always 0 here)
+    ///
+    /// Deliberately does NOT include `from_pubkey` — that field is
+    /// transport-only (added so the node can look up the key to verify
+    /// against), not part of the signed content.
+    pub fn signable_bytes(&self) -> Vec<u8> {
+        let mut v = Vec::with_capacity(32 + 32 + 32 + 8 * 5 + 8 + 8);
+        v.extend_from_slice(&self.hash);
+        v.extend_from_slice(&self.from);
+        v.extend_from_slice(&self.to);
+        v.extend_from_slice(&self.value.to_le_bytes());
+        v.extend_from_slice(&self.nonce.to_le_bytes());
+        v.extend_from_slice(&self.base_fee.to_le_bytes());
+        v.extend_from_slice(&self.priority_fee.to_le_bytes());
+        v.extend_from_slice(&self.gas_limit.to_le_bytes());
+        v.extend_from_slice(&0u64.to_le_bytes()); // signature length prefix (empty sig)
+        // signature bytes themselves: empty, nothing to append
+        v.extend_from_slice(&0u64.to_le_bytes()); // received_at, zeroed for signing
+        v
     }
 }
 
@@ -98,6 +137,8 @@ pub enum MempoolError {
     PoolFull,
     /// Signature verification failed (hook into your M1 crypto).
     InvalidSignature,
+    /// from_pubkey does not hash (SHA3-256) to the claimed `from` address.
+    InvalidPubkey,
     /// gas_limit is zero or exceeds block gas limit.
     InvalidGas,
 }
@@ -187,8 +228,17 @@ impl Mempool {
             }
         }
 
-        // 6. TODO: signature verification (hook into src/crypto/)
-        // self.verify_signature(&tx)?;
+        // 6. Signature verification (AUDIT-FIX: was a TODO / no-op).
+        //    Two checks, both required:
+        //    a) the claimed pubkey actually hashes to the claimed sender address
+        //    b) the Dilithium2 signature is valid for that pubkey over the
+        //       exact bytes the wallet/faucet signed (see signable_bytes())
+        if crate::consensus::address_from_pubkey(&tx.from_pubkey) != tx.from {
+            return Err(MempoolError::InvalidPubkey);
+        }
+        if !crate::crypto::verify(&tx.signable_bytes(), &tx.signature, &tx.from_pubkey) {
+            return Err(MempoolError::InvalidSignature);
+        }
 
         // 7. Insert - now safe to mutably borrow again
         let effective_fee = tx.effective_fee(self.config.base_fee);
@@ -318,11 +368,29 @@ fn now_secs() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
 
+    /// Returns a real Dilithium2 keypair for a given test "identity" byte,
+    /// generating it once and reusing it on subsequent calls so the same
+    /// `from` id always maps to the same address (needed for nonce/queue
+    /// tests that send multiple txs "from" the same sender).
+    fn keypair_for(id: u8) -> (Vec<u8>, Vec<u8>) {
+        static KEYS: OnceLock<Mutex<HashMap<u8, (Vec<u8>, Vec<u8>)>>> = OnceLock::new();
+        let map = KEYS.get_or_init(|| Mutex::new(HashMap::new()));
+        let mut map = map.lock().unwrap();
+        map.entry(id)
+            .or_insert_with(crate::crypto::generate_keypair)
+            .clone()
+    }
+
+    /// Builds a transaction with a REAL, verifying Dilithium2 signature —
+    /// necessary now that Mempool::add() actually checks it (previously
+    /// this test suite used a `vec![0u8; 2420]` placeholder signature,
+    /// which only worked because verification was a no-op TODO).
     fn make_tx(from: u8, nonce: u64, base_fee: u64, priority_fee: u64) -> Transaction {
-        let mut from_addr = [0u8; 32];
-        from_addr[0] = from;
-        Transaction {
+        let (pk, sk) = keypair_for(from);
+        let from_addr = crate::consensus::address_from_pubkey(&pk);
+        let mut tx = Transaction {
             hash: [from, nonce as u8, base_fee as u8, 0, 0, 0, 0, 0,
                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                    0, 0, 0, 0, 0, 0, 0, 0],
@@ -333,9 +401,12 @@ mod tests {
             base_fee,
             priority_fee,
             gas_limit: 21_000,
-            signature: vec![0u8; 2420], // Dilithium2 size for M1
+            signature: Vec::new(), // filled in below, after signable_bytes() is stable
             received_at: now_secs(),
-        }
+            from_pubkey: pk,
+        };
+        tx.signature = crate::crypto::sign(&sk, &tx.signable_bytes());
+        tx
     }
 
     #[test]
