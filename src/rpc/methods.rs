@@ -324,8 +324,9 @@ mod tests {
     }
 
     fn make_tx(from: u8, nonce: u64) -> Transaction {
-        let mut from_addr = [0u8; 32];
-        from_addr[0] = from;
+        let _ = from; // kept for call-site readability; address now comes from the real keypair
+        let (pk, sk) = crate::crypto::generate_keypair();
+        let from_addr = crate::consensus::address_from_pubkey(&pk);
         let tx_incomplete = Transaction {
             hash: [0u8; 32], // placeholder
             from: from_addr,
@@ -335,12 +336,15 @@ mod tests {
             base_fee: 1_000,
             priority_fee: 50,
             gas_limit: 21_000,
-            signature: vec![0u8; 2420],
+            signature: Vec::new(),
             received_at: 0,
+            from_pubkey: pk,
         };
-        // compute correct hash
+        // compute correct hash (AUDIT-018 formula, unaffected by from_pubkey)
         let hash = compute_tx_hash(&tx_incomplete);
-        Transaction { hash, ..tx_incomplete }
+        let mut tx = Transaction { hash, ..tx_incomplete };
+        tx.signature = crate::crypto::sign(&sk, &tx.signable_bytes());
+        tx
     }
 
     #[test]
