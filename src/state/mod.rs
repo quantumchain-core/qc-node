@@ -99,6 +99,11 @@ mod tests {
             gas_limit: 21,
             signature: vec![0u8; 2420],
             received_at: 0,
+            // Executor operates on transactions already accepted by the
+            // mempool (where the real pubkey/signature check happens) —
+            // these tests exercise block execution/state transition only,
+            // so a placeholder here is fine and intentionally not signed.
+            from_pubkey: vec![0u8; 1312],
         }
     }
 
