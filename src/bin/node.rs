@@ -16,11 +16,11 @@ use qc_node::node::Node;
 use qc_node::rpc::{self, AppState, ChainHead};
 use qc_node::state::Storage;
 
-use argon2::{Argon2, PasswordHasher};
-use argon2::password_hash::SaltString;
-use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
+use argon2::Argon2;
+use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
 use aes_gcm::aead::{Aead, OsRng, AeadCore};
 use rand::RngCore;
+use zeroize::Zeroize;
 
 #[derive(Serialize, Deserialize)]
 struct Keystore {
@@ -30,47 +30,79 @@ struct Keystore {
     nonce_hex: String,
 }
 
+const AES_KEY_LEN: usize = 32; // AES-256
+
 fn keystore_path() -> PathBuf {
     let path = std::env::var("QC_KEYSTORE_PATH")
         .unwrap_or_else(|_| "./qc-keystore.json".to_string());
     PathBuf::from(path)
 }
 
+/// Derive a 32-byte AES key from `password` + `salt` via Argon2id.
+/// Uses the low-level raw-bytes API (`hash_password_into`), NOT the
+/// high-level `hash_password` (which expects a PHC-formatted `SaltString`,
+/// not raw salt bytes — that mismatch was the original compile error here).
+fn derive_key(argon2: &Argon2, password: &str, salt: &[u8]) -> Result<[u8; AES_KEY_LEN], Box<dyn std::error::Error>> {
+    let mut key = [0u8; AES_KEY_LEN];
+    argon2
+        .hash_password_into(password.as_bytes(), salt, &mut key)
+        .map_err(|e| format!("key derivation failed: {e}"))?;
+    Ok(key)
+}
+
+/// Read `QC_KEYSTORE_PASSWORD` from the environment. Unlike the previous
+/// version, this does NOT fall back to a hardcoded default — a default
+/// baked into public source code isn't a secret, so a silent fallback here
+/// would mean "encrypted" keystores are only as safe as a string anyone can
+/// read on GitHub. Refusing to start is safer than starting insecurely.
+fn require_keystore_password() -> Result<String, Box<dyn std::error::Error>> {
+    std::env::var("QC_KEYSTORE_PASSWORD").map_err(|_| {
+        "QC_KEYSTORE_PASSWORD is not set. Refusing to start: there is no safe default \
+         for the keystore encryption password. Set QC_KEYSTORE_PASSWORD before launching the node."
+            .into()
+    })
+}
+
 fn load_or_generate_keypair() -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::Error>> {
     let path = keystore_path();
-    let password = std::env::var("QC_KEYSTORE_PASSWORD")
-        .unwrap_or_else(|_| "CHANGE_THIS_IMMEDIATELY_IN_PRODUCTION".to_string());
+    let password = require_keystore_password()?;
+    let argon2 = Argon2::default();
 
     if path.exists() {
         let json = std::fs::read_to_string(&path)?;
         let ks: Keystore = serde_json::from_str(&json)?;
 
         let salt = hex::decode(&ks.salt_hex)?;
-        let nonce = Nonce::from_slice(&hex::decode(&ks.nonce_hex)?);
+        let nonce_bytes = hex::decode(&ks.nonce_hex)?;
+        let nonce = Nonce::from_slice(&nonce_bytes);
 
-        let argon2 = Argon2::default();
-        let salt_string = SaltString::encode_b64(&salt)?;
-        let password_hash = argon2.hash_password(password.as_bytes(), &salt_string)?;
-        let key = password_hash.hash.ok_or("key derivation failed")?.as_bytes();
+        let mut key_bytes = derive_key(&argon2, &password, &salt)?;
+        let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
+        let cipher = Aes256Gcm::new(key);
+        key_bytes.zeroize();
 
-        let cipher = Aes256Gcm::new_from_slice(key)?;
         let ciphertext = hex::decode(&ks.encrypted_sk)?;
-        let sk = cipher.decrypt(nonce, ciphertext.as_ref())?;
+        let sk = cipher
+            .decrypt(nonce, ciphertext.as_ref())
+            .map_err(|_| "incorrect QC_KEYSTORE_PASSWORD or corrupted keystore file")?;
 
         println!("✅ Loaded encrypted keystore from {}", path.display());
         Ok((hex::decode(&ks.pk_hex)?, sk))
     } else {
         let (pk, sk) = generate_keypair();
+
         let mut salt = [0u8; 16];
         rand::thread_rng().fill_bytes(&mut salt);
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-        let argon2 = Argon2::default();
-        let salt_string = SaltString::encode_b64(&salt)?;
-        let password_hash = argon2.hash_password(password.as_bytes(), &salt_string)?;
-        let key = password_hash.hash.ok_or("key derivation failed")?.as_bytes();
 
-        let cipher = Aes256Gcm::new_from_slice(key)?;
-        let encrypted = cipher.encrypt(&nonce, sk.as_ref())?;
+        let mut key_bytes = derive_key(&argon2, &password, &salt)?;
+        let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
+        let cipher = Aes256Gcm::new(key);
+        key_bytes.zeroize();
+
+        let encrypted = cipher
+            .encrypt(&nonce, sk.as_ref())
+            .map_err(|_| "keystore encryption failed")?;
 
         let ks = Keystore {
             pk_hex: hex::encode(&pk),
@@ -152,4 +184,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = net::publish(&mut swarm, &msg);
         }
     }
-}
+            }
