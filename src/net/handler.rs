@@ -88,9 +88,9 @@ mod tests {
     use crate::mempool::{Mempool, MempoolConfig, Transaction};
 
     fn make_tx(from: u8, nonce: u64) -> Transaction {
-        let mut from_addr = [0u8; 32];
-        from_addr[0] = from;
-        Transaction {
+        let (pk, sk) = crate::crypto::generate_keypair();
+        let from_addr = crate::consensus::address_from_pubkey(&pk);
+        let mut tx = Transaction {
             hash: [from, nonce as u8, 1, 0, 0, 0, 0, 0,
                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -101,9 +101,12 @@ mod tests {
             base_fee: 1_000,
             priority_fee: 100,
             gas_limit: 21_000,
-            signature: vec![0u8; 2420],
+            signature: Vec::new(),
             received_at: 0,
-        }
+            from_pubkey: pk,
+        };
+        tx.signature = crate::crypto::sign(&sk, &tx.signable_bytes());
+        tx
     }
 
     fn make_block(parent: [u8; 32], sig: Vec<u8>) -> Block {
