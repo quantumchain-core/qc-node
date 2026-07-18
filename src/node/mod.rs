@@ -255,9 +255,9 @@ mod tests {
     }
 
     fn make_tx(from: u8, nonce: u64) -> Transaction {
-        let mut from_addr = [0u8; 32];
-        from_addr[0] = from;
-        Transaction {
+        let (pk, sk) = generate_keypair();
+        let from_addr = crate::consensus::address_from_pubkey(&pk);
+        let mut tx = Transaction {
             hash: [from, nonce as u8, 3, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
             from: from_addr,
             to: [2u8; 32],
@@ -266,9 +266,12 @@ mod tests {
             base_fee: 1_000,
             priority_fee: 50,
             gas_limit: 21_000,
-            signature: vec![0u8; 2420],
+            signature: Vec::new(),
             received_at: 0,
-        }
+            from_pubkey: pk,
+        };
+        tx.signature = crate::crypto::sign(&sk, &tx.signable_bytes());
+        tx
     }
 
     #[test]
@@ -333,15 +336,14 @@ mod tests {
         let mut node = Node::new(app.clone(), producer, registry);
 
         // Fund sender: needs value(10) + gas_limit(21_000)*base_fee(1_000)
-        let mut from_addr = [0u8; 32];
-        from_addr[0] = 1;
-        app.state_db.lock().unwrap().set_account(from_addr, Account {
+        let tx = make_tx(1, 0);
+        app.state_db.lock().unwrap().set_account(tx.from, Account {
             balance: 100_000_000,
             nonce: 0,
             ..Default::default()
         });
 
-        app.mempool.lock().unwrap().add(make_tx(1, 0)).unwrap();
+        app.mempool.lock().unwrap().add(tx).unwrap();
 
         let block = node.try_produce_block().unwrap().expect("block produced");
         assert_eq!(block.header.number, 1);
@@ -386,21 +388,20 @@ mod tests {
             node_b.app.chain_head.lock().unwrap().head_hash
         );
 
-        let mut from_addr = [0u8; 32];
-        from_addr[0] = 1;
-        app_a.state_db.lock().unwrap().set_account(from_addr, Account {
+        let tx = make_tx(1, 0);
+        app_a.state_db.lock().unwrap().set_account(tx.from, Account {
             balance: 100_000_000,
             nonce: 0,
             ..Default::default()
         });
         // B needs the same starting state to validate the same transfer
-        app_b.state_db.lock().unwrap().set_account(from_addr, Account {
+        app_b.state_db.lock().unwrap().set_account(tx.from, Account {
             balance: 100_000_000,
             nonce: 0,
             ..Default::default()
         });
 
-        app_a.mempool.lock().unwrap().add(make_tx(1, 0)).unwrap();
+        app_a.mempool.lock().unwrap().add(tx.clone()).unwrap();
 
         let block = node_a.try_produce_block().unwrap().expect("block produced");
         let raw = bincode::serialize(&GossipMsg::NewBlock(block.clone())).unwrap();
@@ -414,8 +415,8 @@ mod tests {
         assert_eq!(head_b.number, 1);
 
         // B's state converged with A's after executing the same block
-        let bal_a = app_a.state_db.lock().unwrap().get_account(&from_addr).balance;
-        let bal_b = app_b.state_db.lock().unwrap().get_account(&from_addr).balance;
+        let bal_a = app_a.state_db.lock().unwrap().get_account(&tx.from).balance;
+        let bal_b = app_b.state_db.lock().unwrap().get_account(&tx.from).balance;
         assert_eq!(bal_a, bal_b);
     }
 
@@ -430,3 +431,4 @@ mod tests {
         assert_eq!(node.drain_outbox().len(), 0); // drained
     }
 }
+
