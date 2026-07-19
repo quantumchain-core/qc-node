@@ -337,6 +337,7 @@ mod tests {
 
         // Fund sender: needs value(10) + gas_limit(21_000)*base_fee(1_000)
         let tx = make_tx(1, 0);
+        let from_addr = tx.from;
         app.state_db.lock().unwrap().set_account(tx.from, Account {
             balance: 100_000_000,
             nonce: 0,
@@ -431,4 +432,3 @@ mod tests {
         assert_eq!(node.drain_outbox().len(), 0); // drained
     }
 }
-
