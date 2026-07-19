@@ -1,4 +1,4 @@
-// src/bin/node.rs - Simplified Working Encrypted Keystore
+// src/bin/node.rs - Final Clean Version
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::path::PathBuf;
@@ -30,7 +30,7 @@ struct Keystore {
     nonce_hex: String,
 }
 
-const AES_KEY_LEN: usize = 32; // AES-256
+const AES_KEY_LEN: usize = 32;
 
 fn keystore_path() -> PathBuf {
     let path = std::env::var("QC_KEYSTORE_PATH")
@@ -38,10 +38,6 @@ fn keystore_path() -> PathBuf {
     PathBuf::from(path)
 }
 
-/// Derive a 32-byte AES key from `password` + `salt` via Argon2id.
-/// Uses the low-level raw-bytes API (`hash_password_into`), NOT the
-/// high-level `hash_password` (which expects a PHC-formatted `SaltString`,
-/// not raw salt bytes — that mismatch was the original compile error here).
 fn derive_key(argon2: &Argon2, password: &str, salt: &[u8]) -> Result<[u8; AES_KEY_LEN], Box<dyn std::error::Error>> {
     let mut key = [0u8; AES_KEY_LEN];
     argon2
@@ -50,16 +46,9 @@ fn derive_key(argon2: &Argon2, password: &str, salt: &[u8]) -> Result<[u8; AES_K
     Ok(key)
 }
 
-/// Read `QC_KEYSTORE_PASSWORD` from the environment. Unlike the previous
-/// version, this does NOT fall back to a hardcoded default — a default
-/// baked into public source code isn't a secret, so a silent fallback here
-/// would mean "encrypted" keystores are only as safe as a string anyone can
-/// read on GitHub. Refusing to start is safer than starting insecurely.
 fn require_keystore_password() -> Result<String, Box<dyn std::error::Error>> {
     std::env::var("QC_KEYSTORE_PASSWORD").map_err(|_| {
-        "QC_KEYSTORE_PASSWORD is not set. Refusing to start: there is no safe default \
-         for the keystore encryption password. Set QC_KEYSTORE_PASSWORD before launching the node."
-            .into()
+        "QC_KEYSTORE_PASSWORD is not set. Set it before launching the node.".into()
     })
 }
 
@@ -73,8 +62,7 @@ fn load_or_generate_keypair() -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::
         let ks: Keystore = serde_json::from_str(&json)?;
 
         let salt = hex::decode(&ks.salt_hex)?;
-        let nonce_bytes = hex::decode(&ks.nonce_hex)?;
-        let nonce = Nonce::from_slice(&nonce_bytes);
+        let nonce = Nonce::from_slice(&hex::decode(&ks.nonce_hex)?);
 
         let mut key_bytes = derive_key(&argon2, &password, &salt)?;
         let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
@@ -84,11 +72,12 @@ fn load_or_generate_keypair() -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::
         let ciphertext = hex::decode(&ks.encrypted_sk)?;
         let sk = cipher
             .decrypt(nonce, ciphertext.as_ref())
-            .map_err(|_| "incorrect QC_KEYSTORE_PASSWORD or corrupted keystore file")?;
+            .map_err(|_| "incorrect password or corrupted keystore")?;
 
         println!("✅ Loaded encrypted keystore from {}", path.display());
         Ok((hex::decode(&ks.pk_hex)?, sk))
     } else {
+        println!("🔑 Generating new keypair...");
         let (pk, sk) = generate_keypair();
 
         let mut salt = [0u8; 16];
@@ -100,9 +89,7 @@ fn load_or_generate_keypair() -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::
         let cipher = Aes256Gcm::new(key);
         key_bytes.zeroize();
 
-        let encrypted = cipher
-            .encrypt(&nonce, sk.as_ref())
-            .map_err(|_| "keystore encryption failed")?;
+        let encrypted = cipher.encrypt(&nonce, sk.as_ref())?;
 
         let ks = Keystore {
             pk_hex: hex::encode(&pk),
@@ -112,7 +99,7 @@ fn load_or_generate_keypair() -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::
         };
 
         std::fs::write(&path, serde_json::to_string_pretty(&ks)?)?;
-        println!("✅ Created encrypted keystore at {}", path.display());
+        println!("✅ Generated new keypair, saved to {}", path.display());
         Ok((pk, sk))
     }
 }
@@ -136,6 +123,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let network = std::env::var("QC_NETWORK").unwrap_or_else(|_| "testnet".to_string());
     println!("================================================\n  QTC NODE -- {} \n================================================", network.to_uppercase());
 
+    let (pk, sk) = load_or_generate_keypair()?;
+    let coinbase = load_coinbase(&pk)?;
+    println!("🔑 Validator address: 0x{}", hex::encode(coinbase));
+
     let storage = Storage::new()?;
     let state_db = storage.get_state()?.unwrap_or_default();
 
@@ -147,8 +138,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         outbox: Arc::new(Mutex::new(Vec::new())),
     };
 
-    let (pk, sk) = load_or_generate_keypair()?;
-    let coinbase = load_coinbase(&pk)?;
     let producer = Producer::new(sk, pk.clone(), coinbase);
 
     let registry = match std::env::var("QC_GENESIS_PATH") {
