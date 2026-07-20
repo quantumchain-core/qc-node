@@ -41,7 +41,7 @@ fn keystore_path() -> PathBuf {
 /// Derive a 32-byte AES key from `password` + `salt` via Argon2id.
 /// Uses the low-level raw-bytes API (`hash_password_into`), NOT the
 /// high-level `hash_password` (which expects a PHC-formatted `SaltString`,
-/// not raw salt bytes â€” that mismatch was the original compile error here).
+/// not raw salt bytes — that mismatch was the original compile error here).
 fn derive_key(argon2: &Argon2, password: &str, salt: &[u8]) -> Result<[u8; AES_KEY_LEN], Box<dyn std::error::Error>> {
     let mut key = [0u8; AES_KEY_LEN];
     argon2
@@ -51,7 +51,7 @@ fn derive_key(argon2: &Argon2, password: &str, salt: &[u8]) -> Result<[u8; AES_K
 }
 
 /// Read `QC_KEYSTORE_PASSWORD` from the environment. Unlike the previous
-/// version, this does NOT fall back to a hardcoded default â€” a default
+/// version, this does NOT fall back to a hardcoded default — a default
 /// baked into public source code isn't a secret, so a silent fallback here
 /// would mean "encrypted" keystores are only as safe as a string anyone can
 /// read on GitHub. Refusing to start is safer than starting insecurely.
@@ -86,7 +86,7 @@ fn load_or_generate_keypair() -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::
             .decrypt(nonce, ciphertext.as_ref())
             .map_err(|_| "incorrect QC_KEYSTORE_PASSWORD or corrupted keystore file")?;
 
-        println!("âœ… Loaded encrypted keystore from {}", path.display());
+        println!("✅ Loaded encrypted keystore from {}", path.display());
         Ok((hex::decode(&ks.pk_hex)?, sk))
     } else {
         let (pk, sk) = generate_keypair();
@@ -112,7 +112,7 @@ fn load_or_generate_keypair() -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::
         };
 
         std::fs::write(&path, serde_json::to_string_pretty(&ks)?)?;
-        println!("âœ… Created encrypted keystore at {}", path.display());
+        println!("✅ Created encrypted keystore at {}", path.display());
         Ok((pk, sk))
     }
 }
