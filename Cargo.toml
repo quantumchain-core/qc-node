@@ -36,3 +36,12 @@ zeroize      = "1.7"
 tokio    = { version = "1.35", features = ["macros", "rt-multi-thread"] }
 tempfile = "3.8"
 tower    = { version = "0.4", features = ["util"] }
+
+
+[[bin]]
+name = "fund_and_send"
+path = "src/bin/fund_and_send.rs"
+
+[[bin]]
+name = "send_tx"
+path = "src/bin/send_tx.rs"
