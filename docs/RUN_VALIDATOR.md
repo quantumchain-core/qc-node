@@ -5,8 +5,34 @@
 **Purpose:** Validate blocks, earn community emissions, help find bugs before mainnet
 
 ---
+## How Rewards Work
+
+Performance-based only. No time locks. No minimum stake.
+
+```
+Monthly Reward =
+  (your_blocks / total_blocks) × 60% of monthly pool
++ (your_uptime%) × 40% of monthly pool
+```
+
+**Year 1 monthly pool:** ~4,166,666 tQTC (from 50M annual)
+
+**Example with 10 validators, equal performance:**
+Each earns ~416,666 tQTC/month at 100% uptime.
+At 50% uptime you earn proportionally less.
+Go offline for a week → earn nothing that week.
+
+**No bonuses for just registering. Earn only while running.**
+
+**tQTC → QTC conversion:**
+When mainnet launches, DAO votes on conversion ratio.
+Early validators with best uptime get best ratio.
+Announced publicly before mainnet. No surprises.
+
+---
 
 ## Requirements
+
 
 | Item | Minimum | Recommended |
 |---|---|---|
