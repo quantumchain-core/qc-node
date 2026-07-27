@@ -2,9 +2,10 @@
 
 **Network:** QTC Testnet
 **Token:** tQTC (test tokens — zero monetary value)
-**Purpose:** Validate blocks, earn community emissions, help find bugs before mainnet
+**Purpose:** Validate blocks, earn tQTC rewards, help build the network
 
 ---
+
 ## How Rewards Work
 
 Performance-based only. No time locks. No minimum stake.
@@ -33,30 +34,29 @@ Announced publicly before mainnet. No surprises.
 
 ## Requirements
 
-
 | Item | Minimum | Recommended |
 |---|---|---|
 | CPU | 1 vCPU | 2 vCPU |
 | RAM | 512 MB | 1 GB |
 | Disk | 10 GB | 20 GB |
 | OS | Ubuntu 22.04 | Ubuntu 22.04 |
-| Network | 1 Mbps | 10 Mbps |
+| Network | 10 Mbps | 100 Mbps |
 | Cost | $0 (Oracle Cloud Always Free) | $0 |
 
 **Oracle Cloud Always Free tier covers all requirements perfectly.**
-Sign up at cloud.oracle.com — no credit card required for Always Free VMs.
+Sign up at cloud.oracle.com — no credit card charge for Always Free VMs.
 
 ---
 
 ## Step 1 — Get a Free Server
 
-1. Go to **cloud.oracle.com** → Sign up (free, no credit card needed for Always Free)
+1. Go to **cloud.oracle.com** → Sign up (free, $1.08 verification hold — refunded)
 2. Create a VM instance:
    - Shape: **VM.Standard.A1.Flex** (Always Free)
    - OCPU: 1, RAM: 1 GB
    - OS: **Ubuntu 22.04**
    - Enable public IP
-3. Note your public IP address — you'll need it
+3. Note your public IP address
 
 ---
 
@@ -65,7 +65,7 @@ Sign up at cloud.oracle.com — no credit card required for Always Free VMs.
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
-rustc --version   # should show stable 1.7x+
+rustc --version
 ```
 
 ---
@@ -78,22 +78,24 @@ cd qc-node
 cargo build --release
 ```
 
-Build takes 3-5 minutes on first run. The binary is at `target/release/node`.
+Build takes 5-6 minutes on first run.
 
 ---
 
 ## Step 4 — Generate Your Validator Identity
 
-Run the node once to generate your Dilithium2 keypair and see your validator address:
-
 ```bash
-QC_KEYSTORE_PATH=./qc-keystore.json \
-QC_DB_PATH=./qc-data \
-QC_NETWORK=testnet \
+export QC_KEYSTORE_PASSWORD=your_strong_password_here
+export QC_NETWORK=testnet
+export QC_KEYSTORE_PATH=./qc-keystore.json
+export QC_DB_PATH=./qc-data
+export QC_GENESIS_PATH=./genesis/testnet.json
+export QC_RPC_ADDR=0.0.0.0:8545
+
 ./target/release/node
 ```
 
-You will see output like:
+You will see:
 ```
 ================================================
   QTC NODE -- network: TESTNET
@@ -103,74 +105,77 @@ generated new keypair, saved to ./qc-keystore.json
 validator address: 0x<your-64-char-address>
 ```
 
-**Copy your validator address** — you need it to register and receive the airdrop.
+**Copy your validator address immediately.**
+**Backup qc-keystore.json — losing it means losing your validator identity and all earned rewards.**
 
-Stop the node with `Ctrl+C` after copying the address.
+Press Ctrl+C after copying the address.
 
 ---
 
-## Step 5 — Register as a Testnet Validator
+## Step 5 — Register as a Validator
 
-Submit your validator address in one of two ways:
+**Option A — GitHub Issue:**
+Open an issue at github.com/quantumchain-core/qc-node/issues/new
 
-**Option A — GitHub Issue (recommended):**
-Open an issue at github.com/quantumchain-core/qc-node with title:
-`[Validator Registration] 0x<your-address>`
+Title: `[Validator Registration] 0x<your-address>`
 
 Include:
 - Your validator address (0x + 64 hex chars)
-- Your server's public IP and port (default: 0.0.0.0:30333)
-- Your country/region (helps us track global distribution)
+- Your pk_hex from qc-keystore.json
+- Your server public IP
+- Your country/region
 
-**Option B — Email:**
-Send your address to touqeerahmadofficial896@gmail.com
-Subject: `QTC Testnet Validator Registration`
+**Option B — Landing Page (coming soon):**
+Register directly at qtc.network with GitHub login.
 
-You will be added to the next genesis update within 48 hours.
+You will be added to genesis/testnet.json within 48 hours.
 
 ---
 
-## Step 6 — Download the Testnet Genesis File
+## Step 6 — Download Updated Genesis File
 
-Once registered, download the latest genesis config:
+After registration, download the updated genesis:
 
 ```bash
-curl -o testnet-genesis.json \
-  https://raw.githubusercontent.com/quantumchain-core/qtc-mainnet/main/genesis/testnet.json
+curl -o genesis/testnet.json \
+  https://raw.githubusercontent.com/quantumchain-core/qc-node/main/genesis/testnet.json
 ```
 
 ---
 
 ## Step 7 — Run Your Validator
 
+Create a launch script:
+
 ```bash
-QC_KEYSTORE_PATH=./qc-keystore.json \
-QC_DB_PATH=./qc-data \
-QC_NETWORK=testnet \
-QC_GENESIS_PATH=./testnet-genesis.json \
-QC_RPC_ADDR=0.0.0.0:8545 \
+cat > run-validator.sh << 'SCRIPT'
+#!/bin/bash
+export QC_KEYSTORE_PASSWORD=your_strong_password_here
+export QC_NETWORK=testnet
+export QC_KEYSTORE_PATH=./qc-keystore.json
+export QC_DB_PATH=./qc-data
+export QC_GENESIS_PATH=./genesis/testnet.json
+export QC_RPC_ADDR=0.0.0.0:8545
 ./target/release/node
+SCRIPT
+chmod +x run-validator.sh
 ```
 
-You should see:
-```
-================================================
-  QTC NODE -- network: TESTNET
-  (testnet tokens have NO monetary value)
-================================================
-loaded keypair from ./qc-keystore.json
-validator address: 0x<your-address>
-coinbase: 0x<your-address> (derived from validator pubkey)
-loading validator registry from ./testnet-genesis.json
-validator registry: N validator(s)
-QTC node RPC listening on 0.0.0.0:8545
+Run in background:
+```bash
+nohup env QC_KEYSTORE_PASSWORD=your_strong_password_here \
+  QC_NETWORK=testnet \
+  QC_KEYSTORE_PATH=./qc-keystore.json \
+  QC_DB_PATH=./qc-data \
+  QC_GENESIS_PATH=./genesis/testnet.json \
+  QC_RPC_ADDR=0.0.0.0:8545 \
+  ./target/release/node > validator.log 2>&1 &
+echo "Validator PID: $!"
 ```
 
 ---
 
-## Step 8 — Keep It Running (Optional but Recommended)
-
-Create a systemd service so your validator restarts automatically:
+## Step 8 — Keep It Running (Systemd)
 
 ```bash
 sudo tee /etc/systemd/system/qtc-validator.service << 'UNIT'
@@ -182,36 +187,41 @@ After=network.target
 Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/qc-node
-Environment="QC_KEYSTORE_PATH=/home/ubuntu/qc-node/qc-keystore.json"
-Environment="QC_DB_PATH=/home/ubuntu/qc-node/qc-data"
-Environment="QC_NETWORK=testnet"
-Environment="QC_GENESIS_PATH=/home/ubuntu/qc-node/testnet-genesis.json"
-Environment="QC_RPC_ADDR=0.0.0.0:8545"
+EnvironmentFile=/home/ubuntu/qtc.env
 ExecStart=/home/ubuntu/qc-node/target/release/node
-Restart=on-failure
+Restart=always
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 UNIT
 
+cat > /home/ubuntu/qtc.env << 'ENV'
+QC_KEYSTORE_PASSWORD=your_strong_password_here
+QC_NETWORK=testnet
+QC_KEYSTORE_PATH=/home/ubuntu/qc-node/qc-keystore.json
+QC_DB_PATH=/home/ubuntu/qc-node/qc-data
+QC_GENESIS_PATH=/home/ubuntu/qc-node/genesis/testnet.json
+QC_RPC_ADDR=0.0.0.0:8545
+ENV
+
 sudo systemctl daemon-reload
 sudo systemctl enable qtc-validator
 sudo systemctl start qtc-validator
-sudo journalctl -u qtc-validator -f   # view logs
+sudo journalctl -u qtc-validator -f
 ```
 
 ---
 
-## Verify Your Node is Working
+## Verify Your Node
 
 ```bash
-# Check your block number
+# Check block number
 curl -s -X POST http://localhost:8545 \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
 
-# Check your balance (replace with your address)
+# Check your balance
 curl -s -X POST http://localhost:8545 \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_getBalance","params":["0x<your-address>","latest"],"id":1}'
@@ -219,21 +229,9 @@ curl -s -X POST http://localhost:8545 \
 
 ---
 
-## Earn tQTC
-
-As a registered testnet validator you earn:
-- **Community emissions** — proportional to blocks produced + uptime
-- **Genesis airdrop** — 20,000 tQTC for early validators (first 500 claims)
-- **Bug bounty** — up to 1,000,000 tQTC for finding critical bugs
-
-Testnet tokens are converted to mainnet QTC at a 1:1 ratio for genesis validators
-(subject to DAO vote before mainnet launch).
-
----
-
 ## Firewall Rules (Oracle Cloud)
 
-In the Oracle Cloud console, add these ingress rules to your security list:
+Add these ingress rules in Oracle Cloud console:
 
 | Port | Protocol | Purpose |
 |---|---|---|
@@ -244,19 +242,17 @@ In the Oracle Cloud console, add these ingress rules to your security list:
 
 ## Troubleshooting
 
-**"loaded keypair from..."** — ✅ Good, your identity is stable
+**"loaded keypair from..."** — Good, identity is stable
 
-**"generated new keypair..."** — ⚠️ New identity created. If you were registered, re-register.
+**"generated new keypair..."** — New identity. If registered, re-register.
 
-**Node not producing blocks** — You may not be in the genesis validator set yet. Register via GitHub Issue.
+**"unknown parent" errors** — Chain out of sync. Delete qc-data/ and restart.
 
-**"unknown parent" errors** — Your chain is out of sync. Stop node, delete `qc-data/`, restart.
+**Sled lock error** — Another node instance running. Run: `pkill -f "target/release/node"`
 
 ---
 
 ## Bug Bounty
-
-Found a bug? You earn tQTC:
 
 | Severity | Reward |
 |---|---|
@@ -265,13 +261,12 @@ Found a bug? You earn tQTC:
 | Medium | 25,000 tQTC |
 | Low | 5,000 tQTC |
 
-Report bugs as GitHub Issues with title `[BUG] <brief description>`.
-Include: steps to reproduce, expected vs actual behavior, your node version.
+Report: github.com/quantumchain-core/qc-node/issues
 
 ---
 
 ## Stay Updated
 
 - GitHub: github.com/quantumchain-core
-- X/Twitter: @quantumchain (follow for airdrop announcements)
 - Email: touqeerahmadofficial896@gmail.com
+- X: @quantumchain
