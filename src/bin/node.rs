@@ -4,17 +4,18 @@ use std::time::Duration;
 use std::path::PathBuf;
 
 use futures::StreamExt;
-use libp2p::{gossipsub, swarm::SwarmEvent};
+use libp2p::{gossipsub, request_response, swarm::SwarmEvent};
 use serde::{Deserialize, Serialize};
 
 use qc_node::chain::Address;
 use qc_node::consensus::{address_from_pubkey, Producer, ValidatorRegistry, BLOCK_TIME_SECS};
 use qc_node::crypto::generate_keypair;
 use qc_node::mempool::Mempool;
-use qc_node::net::{self, QcBehaviourEvent};
+use qc_node::net::{self, GossipMsg, QcBehaviourEvent};
 use qc_node::node::Node;
 use qc_node::rpc::{self, AppState, ChainHead};
 use qc_node::state::Storage;
+use qc_node::sync;
 
 use argon2::Argon2;
 use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
@@ -69,6 +70,7 @@ fn load_or_generate_keypair() -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::
     let argon2 = Argon2::default();
 
     if path.exists() {
+        restrict_keystore_permissions(&path)?;
         let json = std::fs::read_to_string(&path)?;
         let ks: Keystore = serde_json::from_str(&json)?;
 
@@ -112,9 +114,31 @@ fn load_or_generate_keypair() -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::
         };
 
         std::fs::write(&path, serde_json::to_string_pretty(&ks)?)?;
+        restrict_keystore_permissions(&path)?;
         println!("✅ Created encrypted keystore at {}", path.display());
         Ok((pk, sk))
     }
+}
+
+/// Restrict the keystore file to owner read/write only (0600). Without
+/// this, the file inherits the process umask — commonly 0644, meaning
+/// any other local user on the box can read the encrypted blob and mount
+/// an offline password-guessing attack against it, with no need to
+/// exploit anything else first. Unix-only; Windows ACLs would need a
+/// different mechanism (not implemented here since RUN_VALIDATOR.md only
+/// documents Ubuntu deployment).
+#[cfg(unix)]
+fn restrict_keystore_permissions(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = std::fs::metadata(path)?.permissions();
+    perms.set_mode(0o600);
+    std::fs::set_permissions(path, perms)?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn restrict_keystore_permissions(_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    Ok(())
 }
 
 fn load_coinbase(pk: &[u8]) -> Result<Address, Box<dyn std::error::Error>> {
@@ -166,13 +190,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move { let _ = axum::serve(listener, rpc_app).await; });
 
     let mut swarm = net::new_swarm().await?;
+    net::start_listening(&mut swarm)?;
+    net::dial_bootstrap_peers(&mut swarm);
     let mut block_timer = tokio::time::interval(Duration::from_secs(BLOCK_TIME_SECS));
 
     loop {
         tokio::select! {
             event = swarm.select_next_some() => {
-                if let SwarmEvent::Behaviour(QcBehaviourEvent::Gossipsub(gossipsub::Event::Message { message, .. })) = event {
-                    let _ = node.on_gossip(&message.data);
+                match event {
+                    SwarmEvent::Behaviour(QcBehaviourEvent::Gossipsub(gossipsub::Event::Message {
+                        propagation_source,
+                        message,
+                        ..
+                    })) => {
+                        // Peek at the block number before handing to on_gossip: a
+                        // gap always means on_gossip will reject it, but we still
+                        // want to know the peer + number to request the missing
+                        // range from. on_gossip is called either way — this is
+                        // purely additive, not a replacement for its validation.
+                        if let Ok(GossipMsg::NewBlock(block)) = bincode::deserialize::<GossipMsg>(&message.data) {
+                            if let Some(req) = node.sync_request_for_gap(block.header.number) {
+                                println!("⏳ gap detected (need {}..{}), requesting sync from {propagation_source}", req.from, req.to);
+                                net::request_sync(&mut swarm, propagation_source, req);
+                            }
+                        }
+                        let _ = node.on_gossip(&message.data);
+                    }
+                    SwarmEvent::Behaviour(QcBehaviourEvent::Sync(request_response::Event::Message {
+                        message,
+                        ..
+                    })) => match message {
+                        request_response::Message::Request { request, channel, .. } => {
+                            let response = sync::build_sync_response(&app_state.storage, &request);
+                            let _ = net::respond_sync(&mut swarm, channel, response);
+                        }
+                        request_response::Message::Response { response, .. } => {
+                            match node.apply_sync_blocks(response.blocks) {
+                                Ok(n) if n > 0 => println!("🔄 synced {n} block(s)"),
+                                Ok(_) => {}
+                                Err(e) => eprintln!("⚠️  sync apply failed: {e}"),
+                            }
+                        }
+                    },
+                    _ => {}
                 }
             }
             _ = block_timer.tick() => {
@@ -184,4 +244,79 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = net::publish(&mut swarm, &msg);
         }
     }
-            }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn test_restrict_keystore_permissions_sets_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        // Start deliberately permissive, to prove this actually tightens
+        // permissions rather than just happening to already be 0600.
+        std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        restrict_keystore_permissions(tmp.path()).unwrap();
+
+        let mode = std::fs::metadata(tmp.path()).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_load_or_generate_keypair_creates_keystore_with_owner_only_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp_dir = tempfile::TempDir::new().unwrap();
+        let keystore_path = tmp_dir.path().join("qc-keystore.json");
+
+        std::env::set_var("QC_KEYSTORE_PATH", &keystore_path);
+        std::env::set_var("QC_KEYSTORE_PASSWORD", "test-password-for-unit-test-only");
+
+        let (pk, sk) = load_or_generate_keypair().unwrap();
+        assert!(!pk.is_empty());
+        assert!(!sk.is_empty());
+
+        let mode = std::fs::metadata(&keystore_path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+
+        std::env::remove_var("QC_KEYSTORE_PATH");
+        std::env::remove_var("QC_KEYSTORE_PASSWORD");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_load_or_generate_keypair_self_heals_loose_permissions_on_reload() {
+        // Simulates a keystore that predates this fix, or got copied in
+        // some other way that lost its restrictive permissions — loading
+        // it should tighten permissions, not just leave them as-is.
+        use std::os::unix::fs::PermissionsExt;
+        let tmp_dir = tempfile::TempDir::new().unwrap();
+        let keystore_path = tmp_dir.path().join("qc-keystore.json");
+
+        std::env::set_var("QC_KEYSTORE_PATH", &keystore_path);
+        std::env::set_var("QC_KEYSTORE_PASSWORD", "test-password-for-unit-test-only");
+
+        // First call creates it (already 0600 per the test above).
+        load_or_generate_keypair().unwrap();
+        // Deliberately loosen it, as if copied from elsewhere.
+        std::fs::set_permissions(&keystore_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        // Second call takes the "load existing" branch.
+        load_or_generate_keypair().unwrap();
+
+        let mode = std::fs::metadata(&keystore_path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+
+        std::env::remove_var("QC_KEYSTORE_PATH");
+        std::env::remove_var("QC_KEYSTORE_PASSWORD");
+    }
+
+    #[test]
+    fn test_require_keystore_password_errors_when_unset() {
+        std::env::remove_var("QC_KEYSTORE_PASSWORD");
+        assert!(require_keystore_password().is_err());
+    }
+}
