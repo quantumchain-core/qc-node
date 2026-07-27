@@ -13,7 +13,7 @@
 // swarm (incoming gossip -> on_gossip, outbox -> net::publish).
 
 use crate::chain::{genesis_block, Block};
-use crate::consensus::{validate_block_sig, Producer, ValidatorRegistry};
+use crate::consensus::{address_from_pubkey, validate_block_sig, Producer, ValidatorRegistry};
 use crate::net::{GossipMsg, HandleResult};
 use crate::rpc::AppState;
 use crate::state::Executor;
@@ -108,6 +108,18 @@ impl Node {
             return HandleResult::BlockRejected(format!("bad sig: {e}"));
         }
 
+        // 2b. tx_root must match the actual transaction list. The signature
+        // only covers the tx_root *field* — without this check, a peer
+        // could swap in different transactions during gossip and it would
+        // go undetected as long as gas accounting still summed correctly.
+        let computed_tx_root = crate::chain::merkle_root(&block.transactions);
+        if computed_tx_root != block.header.tx_root {
+            return HandleResult::BlockRejected(format!(
+                "tx_root mismatch: header declares {:?}, computed {:?}",
+                block.header.tx_root, computed_tx_root
+            ));
+        }
+
         // 3. Gas accounting must match the declared header BEFORE touching state
         let declared_gas: u64 = block.transactions.iter().map(|t| t.gas_limit).sum();
         if declared_gas != block.header.gas_used || declared_gas > block.header.gas_limit {
@@ -173,12 +185,23 @@ impl Node {
     }
 
     /// Try to produce a new block from the mempool.
-    /// Returns Ok(None) if the mempool is empty (not an error — just nothing to do).
-    /// On success: commits state, advances chain_head, and queues the block
-    /// for gossip via the outbox.
+    /// Returns Ok(None) if the mempool is empty, or if it isn't this
+    /// validator's turn to propose — neither is an error, just nothing to do.
     pub fn try_produce_block(&mut self) -> Result<Option<Block>, String> {
         let head = self.app.chain_head.lock().unwrap().clone();
         let parent = self.parent_block(head.number)?;
+
+        // Proposer-turn check: round-robin by slot, same rule as
+        // consensus::Consensus::is_proposer, but actually wired in here.
+        if self.registry.len() > 1 {
+            let my_address = address_from_pubkey(&self.producer.validator_pk);
+            let my_index = self.registry.get_index(&my_address)
+                .ok_or_else(|| "this validator is not in the registry".to_string())?;
+            let next_slot = parent.header.slot + 1;
+            if next_slot % (self.registry.len() as u64) != my_index {
+                return Ok(None); // not our turn this slot
+            }
+        }
 
         {
             let mempool = self.app.mempool.lock().unwrap();
@@ -222,6 +245,49 @@ impl Node {
     pub fn drain_outbox(&mut self) -> Vec<GossipMsg> {
         let mut outbox = self.app.outbox.lock().unwrap();
         std::mem::take(&mut *outbox)
+    }
+
+    /// If an incoming block announces a number further ahead than we can
+    /// use directly (a gap — we're missing one or more blocks in between),
+    /// return the sync request that would close it. Returns None if
+    /// there's no gap (the block is usable as-is, or it's from a peer
+    /// that's behind US, in which case sync doesn't apply).
+    ///
+    /// Pure and network-agnostic on purpose — the caller (the async event
+    /// loop in bin/node.rs) decides what to do with the request, e.g. pick
+    /// a peer and send it via the request-response Behaviour.
+    pub fn sync_request_for_gap(&self, announced_number: u64) -> Option<crate::sync::SyncRequest> {
+        let head_number = self.app.chain_head.lock().unwrap().number;
+        if announced_number <= head_number + 1 {
+            return None; // no gap: either exactly next, or already behind us
+        }
+        let from = head_number + 1;
+        let to = announced_number.min(from + crate::sync::MAX_SYNC_BATCH - 1);
+        Some(crate::sync::SyncRequest { from, to })
+    }
+
+    /// Apply a batch of blocks received via sync, in order, reusing the
+    /// same validation/execution/commit path as gossiped blocks
+    /// (`on_block`). Stops at the first rejected block — a partial batch
+    /// still advances the chain by however many blocks DID apply cleanly,
+    /// rather than discarding a valid prefix because a later block in the
+    /// batch had a problem.
+    pub fn apply_sync_blocks(&mut self, blocks: Vec<Block>) -> Result<u64, String> {
+        let mut applied = 0u64;
+        for block in blocks {
+            let number = block.header.number;
+            match self.on_block(block) {
+                HandleResult::BlockAccepted => applied += 1,
+                HandleResult::BlockRejected(e) => {
+                    return Err(format!(
+                        "sync block {number} rejected after applying {applied} block(s): {e}"
+                    ));
+                }
+                // on_block only ever returns one of the two variants above.
+                other => unreachable!("on_block returned unexpected {other:?}"),
+            }
+        }
+        Ok(applied)
     }
 }
 
@@ -320,6 +386,53 @@ mod tests {
     }
 
     #[test]
+    fn test_on_gossip_block_tx_root_mismatch_rejected() {
+        // A block whose transaction list doesn't match its declared
+        // tx_root must be rejected — this is what actually enforces the
+        // tx_root field now that it's a real merkle root instead of an
+        // always-zero placeholder.
+        let app_a = fresh_app_state();
+        let app_b = fresh_app_state();
+
+        let producer_a = make_producer([9u8; 32]);
+        let producer_b = make_producer([8u8; 32]);
+
+        // node_a gets sole ownership of every slot so this test deterministically
+        // produces a block — proposer turn-taking is covered separately by
+        // test_try_produce_block_respects_proposer_turn.
+        let registry_a = ValidatorRegistry::single(&producer_a.validator_pk);
+        let mut registry_b = ValidatorRegistry::new();
+        registry_b.insert(producer_a.validator_pk.clone());
+
+        let mut node_a = Node::new(app_a.clone(), producer_a, registry_a);
+        let mut node_b = Node::new(app_b.clone(), producer_b, registry_b);
+
+        let tx = make_tx(1, 0);
+        app_a.state_db.lock().unwrap().set_account(tx.from, Account {
+            balance: 100_000_000,
+            nonce: 0,
+            ..Default::default()
+        });
+        app_a.mempool.lock().unwrap().add(tx).unwrap();
+
+        let mut block = node_a.try_produce_block().unwrap().expect("block produced");
+
+        // Tamper with the transaction list after the fact, WITHOUT
+        // recomputing tx_root — simulates a peer swapping transactions
+        // in transit.
+        let extra_tx = make_tx(2, 0);
+        block.transactions.push(extra_tx);
+
+        let raw = bincode::serialize(&GossipMsg::NewBlock(block)).unwrap();
+        let result = node_b.on_gossip(&raw);
+        assert!(
+            matches!(&result, HandleResult::BlockRejected(msg) if msg.contains("tx_root mismatch")),
+            "expected tx_root mismatch rejection, got {result:?}"
+        );
+    }
+
+
+    #[test]
     fn test_try_produce_block_empty_mempool_returns_none() {
         let app = fresh_app_state();
         let producer = make_producer([9u8; 32]);
@@ -366,6 +479,95 @@ mod tests {
     }
 
     #[test]
+    fn test_try_produce_block_respects_proposer_turn() {
+        // Two validators registered; only whichever one's turn it is (same
+        // round-robin rule as consensus::Consensus::is_proposer) should
+        // produce a block — even though BOTH have a pending mempool tx.
+        let app_a = fresh_app_state();
+        let app_b = fresh_app_state();
+
+        let producer_a = make_producer([9u8; 32]);
+        let producer_b = make_producer([8u8; 32]);
+
+        let addr_a = crate::consensus::address_from_pubkey(&producer_a.validator_pk);
+        let addr_b = crate::consensus::address_from_pubkey(&producer_b.validator_pk);
+
+        let mut registry = ValidatorRegistry::new();
+        registry.insert(producer_a.validator_pk.clone());
+        registry.insert(producer_b.validator_pk.clone());
+
+        let index_a = registry.get_index(&addr_a).unwrap();
+        let index_b = registry.get_index(&addr_b).unwrap();
+
+        // Genesis is slot 0, so the first block either node tries to
+        // produce is for slot 1.
+        let next_slot = 1u64;
+        let count = registry.len() as u64;
+        let a_is_proposer = next_slot % count == index_a;
+        let b_is_proposer = next_slot % count == index_b;
+        // Sanity check on the test setup itself: with 2 validators and
+        // distinct indices (0 and 1), exactly one of them owns slot 1.
+        assert_ne!(a_is_proposer, b_is_proposer);
+
+        let mut node_a = Node::new(app_a.clone(), producer_a, registry.clone());
+        let mut node_b = Node::new(app_b.clone(), producer_b, registry.clone());
+
+        // Fund a sender and queue a tx on BOTH nodes — so the only thing
+        // that can stop the "wrong" node from producing is the turn check.
+        let tx_a = make_tx(1, 0);
+        app_a.state_db.lock().unwrap().set_account(tx_a.from, Account {
+            balance: 100_000_000,
+            nonce: 0,
+            ..Default::default()
+        });
+        app_a.mempool.lock().unwrap().add(tx_a).unwrap();
+
+        let tx_b = make_tx(1, 0);
+        app_b.state_db.lock().unwrap().set_account(tx_b.from, Account {
+            balance: 100_000_000,
+            nonce: 0,
+            ..Default::default()
+        });
+        app_b.mempool.lock().unwrap().add(tx_b).unwrap();
+
+        let result_a = node_a.try_produce_block().unwrap();
+        let result_b = node_b.try_produce_block().unwrap();
+
+        assert_eq!(result_a.is_some(), a_is_proposer, "node A produced a block only if it was A's turn");
+        assert_eq!(result_b.is_some(), b_is_proposer, "node B produced a block only if it was B's turn");
+    }
+
+    #[test]
+    fn test_try_produce_block_errors_if_validator_not_registered() {
+        // Fail closed: if this node's own key isn't in the registry it
+        // should get an explicit error, not silently produce forever
+        // (or silently never produce, which would be just as confusing).
+        let app = fresh_app_state();
+        let producer = make_producer([9u8; 32]);
+        let other_1 = make_producer([1u8; 32]);
+        let other_2 = make_producer([2u8; 32]);
+
+        let mut registry = ValidatorRegistry::new();
+        registry.insert(other_1.validator_pk.clone());
+        registry.insert(other_2.validator_pk.clone());
+        // `producer`'s own pubkey was never inserted into the registry.
+
+        let mut node = Node::new(app.clone(), producer, registry);
+
+        let tx = make_tx(1, 0);
+        app.state_db.lock().unwrap().set_account(tx.from, Account {
+            balance: 100_000_000,
+            nonce: 0,
+            ..Default::default()
+        });
+        app.mempool.lock().unwrap().add(tx).unwrap();
+
+        let err = node.try_produce_block().unwrap_err();
+        assert!(err.contains("not in the registry"));
+    }
+
+
+    #[test]
     fn test_produce_then_gossip_to_second_node() {
         // Node A produces a block; Node B (separate state, same genesis)
         // receives it via on_gossip and reaches the same head.
@@ -376,12 +578,17 @@ mod tests {
         let producer_a = make_producer([9u8; 32]);
         let producer_b = make_producer([8u8; 32]);
 
-        let mut registry = ValidatorRegistry::new();
-        registry.insert(producer_a.validator_pk.clone());
-        registry.insert(producer_b.validator_pk.clone());
+        // Node A gets a single-validator registry so it always owns every
+        // slot (this test is about gossip/execution convergence, not
+        // proposer turn-taking — that's covered by
+        // test_try_produce_block_respects_proposer_turn). Node B just
+        // needs A's pubkey in its registry to verify A's signature.
+        let registry_a = ValidatorRegistry::single(&producer_a.validator_pk);
+        let mut registry_b = ValidatorRegistry::new();
+        registry_b.insert(producer_a.validator_pk.clone());
 
-        let mut node_a = Node::new(app_a.clone(), producer_a, registry.clone());
-        let mut node_b = Node::new(app_b.clone(), producer_b, registry.clone());
+        let mut node_a = Node::new(app_a.clone(), producer_a, registry_a);
+        let mut node_b = Node::new(app_b.clone(), producer_b, registry_b);
 
         // Both start from the same genesis hash
         assert_eq!(
@@ -421,6 +628,92 @@ mod tests {
         assert_eq!(bal_a, bal_b);
     }
 
+    #[test]
+    fn test_sync_request_for_gap_none_when_no_gap() {
+        let app = fresh_app_state();
+        let producer = make_producer([9u8; 32]);
+        let registry = ValidatorRegistry::single(&producer.validator_pk);
+        let node = Node::new(app, producer, registry);
+        // head is 0 (genesis); announced = 1 is exactly next, no gap
+        assert_eq!(node.sync_request_for_gap(1), None);
+        // announced = 0 (behind or equal to us) is also not a gap for us
+        assert_eq!(node.sync_request_for_gap(0), None);
+    }
+
+    #[test]
+    fn test_sync_request_for_gap_detected() {
+        let app = fresh_app_state();
+        let producer = make_producer([9u8; 32]);
+        let registry = ValidatorRegistry::single(&producer.validator_pk);
+        let node = Node::new(app, producer, registry);
+        // head is 0; a peer announces block 5 — blocks 1..4 are missing
+        let req = node.sync_request_for_gap(5).expect("gap should be detected");
+        assert_eq!(req.from, 1);
+        assert_eq!(req.to, 5);
+    }
+
+    #[test]
+    fn test_sync_request_for_gap_clamped_to_max_batch() {
+        let app = fresh_app_state();
+        let producer = make_producer([9u8; 32]);
+        let registry = ValidatorRegistry::single(&producer.validator_pk);
+        let node = Node::new(app, producer, registry);
+        let far_ahead = crate::sync::MAX_SYNC_BATCH * 10;
+        let req = node.sync_request_for_gap(far_ahead).unwrap();
+        assert_eq!(req.from, 1);
+        assert_eq!(req.to - req.from + 1, crate::sync::MAX_SYNC_BATCH);
+    }
+
+    #[test]
+    fn test_apply_sync_blocks_advances_head() {
+        // Producer node builds up a short real chain; a second, fresh
+        // node applies those blocks via apply_sync_blocks (simulating
+        // what happens after a sync response arrives) and ends up at the
+        // same head, without ever calling try_produce_block itself.
+        let app_producer = fresh_app_state();
+        let app_syncer = fresh_app_state();
+
+        let producer = make_producer([9u8; 32]);
+        let registry = ValidatorRegistry::single(&producer.validator_pk);
+
+        let mut producer_node = Node::new(app_producer.clone(), producer, registry.clone());
+
+        let tx = make_tx(1, 0);
+        app_producer.state_db.lock().unwrap().set_account(tx.from, Account {
+            balance: 100_000_000,
+            nonce: 0,
+            ..Default::default()
+        });
+        app_producer.mempool.lock().unwrap().add(tx).unwrap();
+        let block = producer_node.try_produce_block().unwrap().expect("block produced");
+
+        // Syncer needs the producer's pubkey in ITS registry to verify
+        // the block's signature, same as the gossip path requires.
+        let mut syncer_node = Node::new(app_syncer.clone(), make_producer([1u8; 32]), registry);
+
+        let applied = syncer_node.apply_sync_blocks(vec![block.clone()]).unwrap();
+        assert_eq!(applied, 1);
+
+        let syncer_head = app_syncer.chain_head.lock().unwrap().clone();
+        assert_eq!(syncer_head.number, 1);
+        assert_eq!(syncer_head.head_hash, block.hash());
+    }
+
+    #[test]
+    fn test_apply_sync_blocks_stops_at_first_rejected_block() {
+        let app = fresh_app_state();
+        let producer = make_producer([9u8; 32]);
+        let registry = ValidatorRegistry::single(&producer.validator_pk);
+        let mut node = Node::new(app, producer, registry);
+
+        let mut bad_block = genesis_block();
+        bad_block.header.number = 1;
+        bad_block.header.parent_hash = [0xFFu8; 32]; // wrong parent, will be rejected
+        bad_block.header.signature = vec![1u8; 2420];
+
+        let err = node.apply_sync_blocks(vec![bad_block]).unwrap_err();
+        assert!(err.contains("rejected after applying 0 block"));
+    }
     #[test]
     fn test_drain_outbox_empties_queue() {
         let app = fresh_app_state();
