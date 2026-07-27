@@ -1,4 +1,4 @@
-// src/rpc/mod.rs
+// src/rpc/mod.rs 
 // QTC M8: JSON-RPC HTTP server
 // Includes standard eth_* methods + custom qtc_* methods for web dashboard.
 //
