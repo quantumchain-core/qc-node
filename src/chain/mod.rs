@@ -61,6 +61,35 @@ impl Block {
     }
 }
 
+/// Binary merkle root over transaction hashes. Standard pairwise-hash
+/// construction: odd node out at any level is paired with itself.
+/// Returns the zero hash for an empty transaction list (matches genesis
+/// and any other intentionally-empty block).
+pub fn merkle_root(transactions: &[Transaction]) -> Hash {
+    use sha2::{Digest, Sha256};
+
+    if transactions.is_empty() {
+        return [0u8; 32];
+    }
+
+    let mut level: Vec<Hash> = transactions.iter().map(|tx| tx.hash).collect();
+
+    while level.len() > 1 {
+        let mut next_level = Vec::with_capacity(level.len().div_ceil(2));
+        for pair in level.chunks(2) {
+            let mut hasher = Sha256::new();
+            hasher.update(pair[0]);
+            // Odd one out at this level: pair with itself rather than
+            // dropping it, so every transaction still affects the root.
+            hasher.update(pair.get(1).unwrap_or(&pair[0]));
+            next_level.push(hasher.finalize().into());
+        }
+        level = next_level;
+    }
+
+    level[0]
+}
+
 /// The fixed genesis block. Every node computes the same hash for this,
 /// so it acts as the universal "block 0" / chain root.
 ///
@@ -90,6 +119,71 @@ pub fn genesis_block() -> Block {
 mod tests {
     use super::*;
 
+    fn tx_with_hash(h: u8) -> Transaction {
+        Transaction {
+            hash: [h; 32],
+            from: [0u8; 32],
+            to: [0u8; 32],
+            value: 0,
+            nonce: 0,
+            base_fee: 0,
+            priority_fee: 0,
+            gas_limit: 0,
+            signature: Vec::new(),
+            received_at: 0,
+            from_pubkey: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn test_merkle_root_empty_is_zero_hash() {
+        assert_eq!(merkle_root(&[]), [0u8; 32]);
+    }
+
+    #[test]
+    fn test_merkle_root_deterministic() {
+        let txs = vec![tx_with_hash(1), tx_with_hash(2), tx_with_hash(3)];
+        assert_eq!(merkle_root(&txs), merkle_root(&txs));
+    }
+
+    #[test]
+    fn test_merkle_root_changes_with_different_txs() {
+        let txs_a = vec![tx_with_hash(1), tx_with_hash(2)];
+        let txs_b = vec![tx_with_hash(1), tx_with_hash(3)];
+        assert_ne!(merkle_root(&txs_a), merkle_root(&txs_b));
+    }
+
+    #[test]
+    fn test_merkle_root_order_sensitive() {
+        // Same transactions, different order -> different root. A block
+        // with reordered (but otherwise identical) transactions must not
+        // hash to the same tx_root.
+        let forward = vec![tx_with_hash(1), tx_with_hash(2), tx_with_hash(3)];
+        let reversed = vec![tx_with_hash(3), tx_with_hash(2), tx_with_hash(1)];
+        assert_ne!(merkle_root(&forward), merkle_root(&reversed));
+    }
+
+    #[test]
+    fn test_merkle_root_odd_count_does_not_panic() {
+        // 1, 3, and 5 transactions all exercise the "odd node paired with
+        // itself" branch at some level.
+        for n in [1usize, 3, 5] {
+            let txs: Vec<Transaction> = (0..n as u8).map(tx_with_hash).collect();
+            let root = merkle_root(&txs);
+            assert_ne!(root, [0u8; 32]);
+        }
+    }
+
+    #[test]
+    fn test_merkle_root_single_tx_is_not_just_its_hash() {
+        // A single-leaf tree still runs through one hashing round (hash
+        // paired with itself), so the root should differ from the raw
+        // transaction hash — this catches an implementation that
+        // accidentally short-circuits and returns the leaf unhashed.
+        let tx = tx_with_hash(7);
+        let root = merkle_root(&[tx.clone()]);
+        assert_ne!(root, tx.hash);
+    }
     #[test]
     fn test_signable_bytes_excludes_sig() {
         let header = BlockHeader {
