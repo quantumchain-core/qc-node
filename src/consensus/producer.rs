@@ -6,7 +6,7 @@
 // in the ValidatorRegistry.
 
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::chain::{Block, BlockHeader, Address};
+use crate::chain::{merkle_root, Block, BlockHeader, Address};
 use crate::mempool::Mempool;
 use crate::state::{StateDB, Executor, Storage};
 use crate::crypto::sign;
@@ -46,7 +46,7 @@ impl Producer {
             slot: parent.header.slot + 1,
             timestamp,
             proposer: address_from_pubkey(&self.validator_pk), // M10: derived from pk
-            tx_root: [0u8; 32],
+            tx_root: merkle_root(&txs),
             state_root: [0u8; 32],
             base_fee: parent.header.base_fee,
             gas_used: 0,
