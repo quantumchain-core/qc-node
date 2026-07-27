@@ -1,3 +1,10 @@
 target/
 snapshots/
 *.tar.gz
+
+# Validator keystore â€” contains the AES-256-GCM-encrypted Dilithium2 secret
+# key. Encrypted at rest, but secrets don't belong in git history even
+# encrypted (history is forever; QC_KEYSTORE_PASSWORD strength isn't a bet
+# worth making retroactively if it ever leaks).
+qc-keystore.json
+*keystore*.json
