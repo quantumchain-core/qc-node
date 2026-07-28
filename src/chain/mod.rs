@@ -166,23 +166,30 @@ mod tests {
     #[test]
     fn test_merkle_root_odd_count_does_not_panic() {
         // 1, 3, and 5 transactions all exercise the "odd node paired with
-        // itself" branch at some level.
+        // itself" branch at some level. Using hashes starting at 1 (not
+        // 0) so a single-tx tree's zero-round-trip (see the test below)
+        // doesn't make this coincidentally compare against the very
+        // all-zero hash we're checking against.
         for n in [1usize, 3, 5] {
-            let txs: Vec<Transaction> = (0..n as u8).map(tx_with_hash).collect();
+            let txs: Vec<Transaction> = (1..=n as u8).map(tx_with_hash).collect();
             let root = merkle_root(&txs);
             assert_ne!(root, [0u8; 32]);
         }
     }
 
     #[test]
-    fn test_merkle_root_single_tx_is_not_just_its_hash() {
-        // A single-leaf tree still runs through one hashing round (hash
-        // paired with itself), so the root should differ from the raw
-        // transaction hash — this catches an implementation that
-        // accidentally short-circuits and returns the leaf unhashed.
+    fn test_merkle_root_single_tx_equals_its_hash() {
+        // By standard merkle-tree convention (same as Bitcoin), a
+        // single-leaf tree's root IS that leaf — there's nothing to pair
+        // it with, so no hashing round happens. My original version of
+        // this test asserted the opposite (assert_ne), which was simply
+        // wrong about the convention and about what merkle_root() above
+        // actually does: its `while level.len() > 1` loop never runs for
+        // exactly one transaction, so it returns the raw hash unchanged.
+        // That's correct behavior, not a bug — documenting it here.
         let tx = tx_with_hash(7);
         let root = merkle_root(&[tx.clone()]);
-        assert_ne!(root, tx.hash);
+        assert_eq!(root, tx.hash);
     }
     #[test]
     fn test_signable_bytes_excludes_sig() {
