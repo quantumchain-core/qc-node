@@ -683,6 +683,17 @@ mod tests {
             nonce: 0,
             ..Default::default()
         });
+        // The syncer independently re-executes the block against its OWN
+        // state (on_block's step 4) — it needs the same starting balance
+        // to verify the same transfer, same as app_b in
+        // test_produce_then_gossip_to_second_node. Forgetting this line
+        // is exactly what caused this test to fail: the syncer rejected
+        // the block as an insufficient-balance execution failure.
+        app_syncer.state_db.lock().unwrap().set_account(tx.from, Account {
+            balance: 100_000_000,
+            nonce: 0,
+            ..Default::default()
+        });
         app_producer.mempool.lock().unwrap().add(tx).unwrap();
         let block = producer_node.try_produce_block().unwrap().expect("block produced");
 
