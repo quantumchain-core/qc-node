@@ -1,4 +1,4 @@
-// src/rpc/mod.rs 
+// src/rpc/mod.rs
 // QTC M8: JSON-RPC HTTP server
 // Includes standard eth_* methods + custom qtc_* methods for web dashboard.
 //
@@ -137,11 +137,10 @@ mod tests {
 
     fn test_state() -> AppState {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::env::set_var("QC_DB_PATH", tmp.path());
         AppState {
             state_db: Arc::new(Mutex::new(StateDB::new())),
             mempool: Arc::new(Mutex::new(Mempool::new(Default::default()))),
-            storage: Arc::new(Storage::new().unwrap()),
+            storage: Arc::new(Storage::open_at(tmp.path()).unwrap()),
             chain_head: Arc::new(Mutex::new(ChainHead::default())),
             outbox: Arc::new(Mutex::new(Vec::new())),
         }
