@@ -66,8 +66,7 @@ mod tests {
 
     fn fresh_storage() -> Storage {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::env::set_var("QC_DB_PATH", tmp.path());
-        Storage::new().unwrap()
+        Storage::open_at(tmp.path()).unwrap()
     }
 
     fn block_at(number: u64, parent_hash: [u8; 32]) -> Block {
