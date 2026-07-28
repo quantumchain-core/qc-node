@@ -138,7 +138,6 @@ mod tests {
     #[test]
     fn test_produce_block_signs_and_saves() {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::env::set_var("QC_DB_PATH", tmp.path());
 
         let producer = make_producer();
         let mut mempool = Mempool::new(MempoolConfig {
@@ -158,7 +157,7 @@ mod tests {
         });
 
         mempool.add(tx).unwrap();
-        let storage = Storage::new().unwrap();
+        let storage = Storage::open_at(tmp.path()).unwrap();
         let parent = genesis();
 
         let block = producer.produce_block(
@@ -174,7 +173,6 @@ mod tests {
     #[test]
     fn test_proposer_matches_pubkey_address() {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::env::set_var("QC_DB_PATH", tmp.path());
 
         let producer = make_producer();
         let mut mempool = Mempool::new(MempoolConfig {
@@ -191,7 +189,7 @@ mod tests {
         });
 
         mempool.add(tx).unwrap();
-        let storage = Storage::new().unwrap();
+        let storage = Storage::open_at(tmp.path()).unwrap();
         let parent = genesis();
 
         let block = producer.produce_block(&mut mempool, &mut state, &storage, &parent).unwrap();
