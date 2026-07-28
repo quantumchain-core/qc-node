@@ -302,14 +302,13 @@ mod tests {
 
     fn fresh_app_state() -> AppState {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::env::set_var("QC_DB_PATH", tmp.path());
         AppState {
             state_db: Arc::new(Mutex::new(StateDB::new())),
             mempool: Arc::new(Mutex::new(Mempool::new(MempoolConfig {
                 base_fee: 1_000,
                 ..Default::default()
             }))),
-            storage: Arc::new(Storage::new().unwrap()),
+            storage: Arc::new(Storage::open_at(tmp.path()).unwrap()),
             chain_head: Arc::new(Mutex::new(ChainHead::default())),
             outbox: Arc::new(Mutex::new(Vec::new())),
         }
