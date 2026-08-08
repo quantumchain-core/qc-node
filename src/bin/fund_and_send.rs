@@ -1,3 +1,25 @@
+// src/bin/fund_and_send.rs - dev/test helper
+//
+// Funds a fresh account by writing DIRECTLY to the on-disk database, then
+// tries to submit one transaction from it over RPC.
+//
+// IMPORTANT CONSTRAINT (not a bug, just how the node works): the node only
+// reads its state from disk ONCE, at startup — after that it runs from an
+// in-memory copy and never looks back at storage except to persist
+// (write), not to re-read. That means the funding side effect here only
+// actually helps if this runs BEFORE the target node process starts. If
+// the node is already running when you invoke this, the RPC transaction
+// submission below may or may not succeed depending on timing, but the
+// funding write will NOT be visible to that already-running process.
+//
+// Two additive changes from the original version, both backward
+// compatible (existing manual usage without these env vars is unchanged):
+//   - QC_RPC_URL overrides the previously-hardcoded "http://localhost:8545"
+//   - QC_PRINT_SECRET_KEY=1 also prints the secret key hex, so a separate
+//     later step (e.g. send_tx with QC_TX_FROM_SK_HEX) can reuse this same
+//     funded identity instead of always generating a throwaway one.
+//     Dev/test tooling only — never do this with a real production key.
+
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -39,11 +61,13 @@ fn main() {
     let hex = hex::encode(&bytes);
     let payload = format!("{{\"jsonrpc\":\"2.0\",\"method\":\"eth_sendRawTransaction\",\"params\":[\"0x{}\"],\"id\":1}}", hex);
 
+    let rpc_url = std::env::var("QC_RPC_URL").unwrap_or_else(|_| "http://localhost:8545".to_string());
+
     let resp = Command::new("curl")
         .arg("-s")
         .arg("-X")
         .arg("POST")
-        .arg("http://localhost:8545")
+        .arg(&rpc_url)
         .arg("-H")
         .arg("Content-Type: application/json")
         .arg("-d")
@@ -52,5 +76,9 @@ fn main() {
         .expect("failed to execute curl");
 
     println!("funded from: 0x{}", hex::encode(from));
+    if std::env::var("QC_PRINT_SECRET_KEY").ok().as_deref() == Some("1") {
+        println!("secret key (dev/test only): 0x{}", hex::encode(&sk));
+        println!("pubkey: 0x{}", hex::encode(&pk));
+    }
     println!("node response: {}", String::from_utf8_lossy(&resp.stdout));
 }
