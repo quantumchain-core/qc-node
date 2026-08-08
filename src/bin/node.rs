@@ -242,7 +242,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             _ = block_timer.tick() => {
-                let _ = node.try_produce_block();
+                match node.try_produce_block() {
+                    Ok(Some(_)) => {} // block produced; gossiped below via drain_outbox
+                    Ok(None) => {} // not our turn, or mempool empty — not an error
+                    Err(e) => eprintln!("⚠️  block production failed: {e}"),
+                }
             }
         }
 
