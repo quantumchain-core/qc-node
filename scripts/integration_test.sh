@@ -208,10 +208,10 @@ echo "Final height — node A: $HEIGHT_A, node B: $HEIGHT_B"
 
 echo ""
 echo "=== node-a.log (last 30 lines) ==="
-tail -30 "$WORKDIR/node-a.log"
+cat "$WORKDIR/node-a.log"
 echo ""
 echo "=== node-b.log (last 30 lines) ==="
-tail -30 "$WORKDIR/node-b.log"
+cat "$WORKDIR/node-b.log"
 
 # ---------------------------------------------------------------------------
 # Step 7: assertions.
