@@ -185,7 +185,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut node = Node::new(app_state.clone(), producer, registry);
 
     let rpc_app = rpc::router(app_state.clone());
-    let rpc_addr = std::env::var("QC_RPC_ADDR").unwrap_or_else(|_| "0.0.0.0:8545".to_string());
+    // Default to localhost-only if QC_RPC_ADDR isn't set. Previously
+    // defaulted to 0.0.0.0 (all interfaces) — meaning a dropped/missing
+    // env var during a restart would silently expose the RPC port to the
+    // public internet instead of failing safe. Explicit opt-in to a
+    // public bind (set QC_RPC_ADDR yourself) is safer than an accidental
+    // public default.
+    let rpc_addr = std::env::var("QC_RPC_ADDR").unwrap_or_else(|_| "127.0.0.1:8545".to_string());
     let listener = tokio::net::TcpListener::bind(&rpc_addr).await?;
     tokio::spawn(async move { let _ = axum::serve(listener, rpc_app).await; });
 
