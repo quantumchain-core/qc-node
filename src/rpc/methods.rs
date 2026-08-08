@@ -280,27 +280,16 @@ pub fn eth_send_raw_transaction(state: &AppState, params: &Value) -> Result<Valu
 // ---------------------------------------------------------------------------
 // Dispatch
 // ---------------------------------------------------------------------------
-
-pub fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
-    let id = req.id.clone();
-    let result = match req.method.as_str() {
-        "eth_chainId"            => Ok(eth_chain_id()),
-        "eth_blockNumber"        => Ok(eth_block_number(state)),
-        "eth_getBalance"         => eth_get_balance(state, &req.params),
-        "eth_getTransactionCount"=> eth_get_transaction_count(state, &req.params),
-        "eth_getBlockByNumber"   => eth_get_block_by_number(state, &req.params),
-        "eth_sendRawTransaction" => eth_send_raw_transaction(state, &req.params),
-        other => return RpcResponse::err(id, ERR_METHOD_NOT_FOUND,
-                            format!("method not found: {other}")),
-    };
-
-    match result {
-        Ok(value) => RpcResponse::ok(id, value),
-        Err(msg) if msg.starts_with("__INTERNAL__") =>
-            RpcResponse::err(id, ERR_INTERNAL, msg.trim_start_matches("__INTERNAL__")),
-        Err(msg) => RpcResponse::err(id, ERR_INVALID_PARAMS, msg),
-    }
-}
+//
+// DEDUP FIX (core-dev review): this module used to define its own
+// `pub fn dispatch()` covering only the eth_* methods. It was never
+// actually reachable from the live server — rpc::router() wires up
+// rpc::dispatch() (in mod.rs), which shadows this one by module-privacy
+// rules and additionally knows about the qtc_* methods this copy didn't.
+// The dead copy had its own tests and was `pub`, so it looked live to
+// anyone grepping for "dispatch" — deleted. The one true dispatcher is
+// rpc::mod::dispatch(); the test module below imports it explicitly
+// (`use super::super::dispatch`) instead of keeping a local duplicate.
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -310,6 +299,10 @@ pub fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
 mod tests {
     use super::*;
     use crate::state::{Account, Storage};
+    // The one real dispatcher lives in rpc::mod (see the DEDUP FIX note
+    // above) — reachable here because methods.rs is a child module of
+    // rpc, which can see rpc's private items.
+    use super::super::dispatch;
 
     fn test_state() -> AppState {
         let tmp = tempfile::TempDir::new().unwrap();
@@ -526,4 +519,4 @@ mod tests {
         let resp = dispatch(&state, req);
         assert_eq!(resp.result.unwrap(), json!(u64_to_hex(TESTNET_CHAIN_ID)));
     }
-}
+    }
