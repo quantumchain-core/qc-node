@@ -191,8 +191,10 @@ impl Node {
         let head = self.app.chain_head.lock().unwrap().clone();
         let parent = self.parent_block(head.number)?;
 
-        // Proposer-turn check: round-robin by slot, same rule as
-        // consensus::Consensus::is_proposer, but actually wired in here.
+        // Proposer-turn check: round-robin by slot. (An earlier, unused
+        // copy of this same rule lived in consensus::Consensus::is_proposer
+        // — removed, since nothing ever called it; this is the only
+        // proposer-turn check that actually runs.)
         if self.registry.len() > 1 {
             let my_address = address_from_pubkey(&self.producer.validator_pk);
             let my_index = self.registry.get_index(&my_address)
@@ -479,9 +481,9 @@ mod tests {
 
     #[test]
     fn test_try_produce_block_respects_proposer_turn() {
-        // Two validators registered; only whichever one's turn it is (same
-        // round-robin rule as consensus::Consensus::is_proposer) should
-        // produce a block — even though BOTH have a pending mempool tx.
+        // Two validators registered; only whichever one's turn it is
+        // should produce a block — even though BOTH have a pending
+        // mempool tx.
         let app_a = fresh_app_state();
         let app_b = fresh_app_state();
 
