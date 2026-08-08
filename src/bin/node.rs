@@ -4,7 +4,7 @@ use std::time::Duration;
 use std::path::PathBuf;
 
 use futures::StreamExt;
-use libp2p::{gossipsub, request_response, swarm::SwarmEvent};
+use libp2p::{gossipsub, identify, request_response, swarm::SwarmEvent};
 use serde::{Deserialize, Serialize};
 
 use qc_node::chain::Address;
@@ -252,6 +252,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     SwarmEvent::IncomingConnectionError { error, .. } => {
                         println!("⚠️  incoming connection error: {error}");
+                    }
+                    SwarmEvent::Behaviour(QcBehaviourEvent::Identify(identify::Event::Received { peer_id, info, .. })) => {
+                        println!("🪪 identify: {peer_id} supports protocols: {:?}", info.protocols);
+                    }
+                    SwarmEvent::Behaviour(QcBehaviourEvent::Identify(identify::Event::Error { peer_id, error, .. })) => {
+                        println!("⚠️  identify error with {peer_id}: {error}");
                     }
                     _ => {}
                 }
