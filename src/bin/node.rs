@@ -238,6 +238,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                     },
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        println!("👂 listening on {address}");
+                    }
+                    SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                        println!("🔗 connection established with {peer_id}");
+                    }
+                    SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
+                        println!("🔌 connection closed with {peer_id}: {cause:?}");
+                    }
+                    SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+                        println!("⚠️  outgoing connection error to {peer_id:?}: {error}");
+                    }
+                    SwarmEvent::IncomingConnectionError { error, .. } => {
+                        println!("⚠️  incoming connection error: {error}");
+                    }
                     _ => {}
                 }
             }
