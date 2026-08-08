@@ -12,7 +12,7 @@ pub use handler::{GossipMsg, HandleResult, handle_gossip};
 pub use sync_codec::SyncCodec;
 
 use libp2p::swarm::NetworkBehaviour;
-use libp2p::{gossipsub, noise, request_response, tcp, yamux, Multiaddr, PeerId, StreamProtocol, SwarmBuilder};
+use libp2p::{gossipsub, identify, noise, request_response, tcp, yamux, Multiaddr, PeerId, StreamProtocol, SwarmBuilder};
 use libp2p::gossipsub::{IdentTopic, MessageAuthenticity, ValidationMode};
 use libp2p::identity::Keypair;
 use std::error::Error;
@@ -33,6 +33,17 @@ pub const SYNC_PROTOCOL: &str = "/qtc/sync/1.0.0";
 pub struct QcBehaviour {
     pub gossipsub: gossipsub::Behaviour,
     pub sync: request_response::Behaviour<SyncCodec>,
+    // Added to fix a symptom seen in real two-process testing: a raw
+    // connection would establish between two nodes, but neither gossipsub
+    // nor the sync protocol would ever actually exchange anything over
+    // it, and it would eventually close from inactivity (KeepAliveTimeout).
+    // identify is the standard libp2p protocol for two peers to properly
+    // exchange listen addresses and supported protocols right after
+    // connecting — commonly needed for other protocols to reliably work
+    // afterward. This is a well-supported hypothesis for that symptom,
+    // not a confirmed root cause — worth confirming against the next real
+    // test run.
+    pub identify: identify::Behaviour,
 }
 
 pub fn peer_id_from_pk(_pk: &[u8]) -> PeerId {
@@ -62,6 +73,11 @@ pub async fn new_swarm() -> Result<libp2p::Swarm<QcBehaviour>, Box<dyn Error>> {
         request_response::Config::default(),
     );
 
+    let identify_behaviour = identify::Behaviour::new(identify::Config::new(
+        "/qtc/1.0.0".to_string(),
+        id_keys.public(),
+    ));
+
     let swarm = SwarmBuilder::with_existing_identity(id_keys)
         .with_tokio()
         .with_tcp(
@@ -72,6 +88,7 @@ pub async fn new_swarm() -> Result<libp2p::Swarm<QcBehaviour>, Box<dyn Error>> {
         .with_behaviour(|_| QcBehaviour {
             gossipsub: gossipsub_behaviour,
             sync: sync_behaviour,
+            identify: identify_behaviour,
         })?
         .build();
 
