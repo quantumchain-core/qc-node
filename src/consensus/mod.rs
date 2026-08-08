@@ -43,10 +43,10 @@ pub const BLOCK_TIME_SECS: u64 = 2;
 /// being just a pass-through of re-exports.
 ///
 /// Returns:
-///   - `Some(true)`  — it's this validator's turn (including the trivial
-///                     single-validator case: nobody to rotate with)
-///   - `Some(false)` — registered, but it's someone else's turn
-///   - `None`        — `my_address` isn't in the registry at all
+/// - `Some(true)` — it's this validator's turn (including the trivial
+///    single-validator case: nobody to rotate with)
+/// - `Some(false)` — registered, but it's someone else's turn
+/// - `None` — `my_address` isn't in the registry at all
 pub fn is_proposer_for_slot(
     registry: &ValidatorRegistry,
     my_address: &crate::chain::Address,
