@@ -8,9 +8,24 @@
 # the first test that runs two ACTUAL separate OS processes, talking over
 # real localhost TCP, exercising the real libp2p swarm, real listen/dial,
 # and — the important part — the real sync protocol under conditions that
-# actually require it: node B starts late, after node A already has
-# several blocks, so B can only catch up via a real sync request/response
-# over the network, not gossip (gossip only ever carries the newest block).
+# actually require it: node B starts late, after node A already has at
+# least one real block, so B can only catch up via a real sync
+# request/response over the network, not gossip (gossip only ever carries
+# the newest block).
+#
+# IMPORTANT: the node only reads its state from disk once, at startup —
+# it never re-reads storage afterward except to persist (write). That
+# means any account funding MUST happen via direct storage write BEFORE
+# the node process starts; funding after startup would be invisible to
+# the running process. This script funds node A's account via
+# fund_and_send BEFORE launching node A, for exactly that reason.
+#
+# Also: producer.rs bundles ALL pending mempool transactions into a
+# single block (mempool.peek_best(1000)) — queuing several transactions
+# at once produces one block, not several. So this script sends exactly
+# one transaction and expects exactly one resulting block from node A
+# before B joins; that's sufficient to prove the sync path, since even a
+# one-block gap is a real gap.
 #
 # What this proves if it passes:
 #   - two real processes can find each other (listen + dial actually works)
@@ -21,7 +36,7 @@
 #   - behavior across real separate machines / real network latency
 #     (both nodes run on localhost here)
 #   - behavior with more than 2 validators
-#   - long-running stability (this test runs for ~40 seconds total)
+#   - long-running stability (this test runs for under a minute total)
 
 set -euo pipefail
 
@@ -32,9 +47,16 @@ trap 'kill $(jobs -p) 2>/dev/null || true' EXIT
 BIN_DIR="target/release"
 NODE_BIN="$BIN_DIR/node"
 KEYGEN_BIN="$BIN_DIR/keygen"
+FUND_BIN="$BIN_DIR/fund_and_send"
+SEND_TX_BIN="$BIN_DIR/send_tx"
+
+NODE_A_RPC_PORT=8545   # fund_and_send's RPC target isn't overridden here,
+                        # so node A uses the default port fund_and_send/
+                        # send_tx also default to, avoiding any port mismatch.
+NODE_B_RPC_PORT=8546
 
 echo "=== Building release binaries ==="
-cargo build --release --bin node --bin keygen
+cargo build --release --bin node --bin keygen --bin fund_and_send --bin send_tx
 
 # ---------------------------------------------------------------------------
 # Step 1: generate two validator identities via keygen — same code path the
@@ -72,6 +94,25 @@ EOF
 echo "=== genesis.json ==="
 cat "$GENESIS_PATH"
 
+# ---------------------------------------------------------------------------
+# Step 3: fund an account for node A's chain, BEFORE node A starts — this
+# writes directly to node A's on-disk DB, which the node will load at
+# startup. The transaction-submission half of fund_and_send will fail here
+# (node A isn't running yet) — that's expected and harmless; only the
+# funding write matters at this point. We capture the funded account's
+# keypair (via QC_PRINT_SECRET_KEY=1) to spend from it in step 5, once node
+# A is actually live.
+# ---------------------------------------------------------------------------
+echo "=== Funding an account in node A's database (node A not started yet) ==="
+FUND_OUT="$(QC_DB_PATH="$WORKDIR/db-a" QC_PRINT_SECRET_KEY=1 "$FUND_BIN" || true)"
+echo "$FUND_OUT"
+FUNDED_SK="$(echo "$FUND_OUT" | grep "secret key" | sed -E 's/.*0x([0-9a-f]+)/\1/')"
+FUNDED_PK="$(echo "$FUND_OUT" | grep "^pubkey:" | sed -E 's/.*0x([0-9a-f]+)/\1/')"
+if [ -z "$FUNDED_SK" ] || [ -z "$FUNDED_PK" ]; then
+  echo "FAIL: could not parse funded account's keypair from fund_and_send output."
+  exit 1
+fi
+
 hex_to_dec() {
   # Convert a 0x-prefixed hex string (as returned by eth_blockNumber) to decimal.
   python3 -c "print(int('$1', 16))"
@@ -92,49 +133,61 @@ block_number() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 3: start node A ALONE first. Let it produce several blocks entirely
-# by itself before node B ever exists — this is what forces B to actually
-# need the sync protocol later, rather than just receiving everything via
-# ordinary gossip as it's produced.
+# Step 4: start node A ALONE. It now has a funded account waiting in its
+# database from step 3.
 # ---------------------------------------------------------------------------
 echo "=== Starting node A alone ==="
 QC_KEYSTORE_PATH="$WORKDIR/validator-a-keystore.json" \
 QC_KEYSTORE_PASSWORD="integration-test-password-a" \
 QC_DB_PATH="$WORKDIR/db-a" \
 QC_GENESIS_PATH="$GENESIS_PATH" \
-QC_RPC_ADDR="127.0.0.1:18545" \
+QC_RPC_ADDR="127.0.0.1:$NODE_A_RPC_PORT" \
 QC_LISTEN_ADDR="/ip4/127.0.0.1/tcp/19001" \
 "$NODE_BIN" > "$WORKDIR/node-a.log" 2>&1 &
 NODE_A_PID=$!
 
 echo "Waiting for node A's RPC to come up..."
 for i in $(seq 1 20); do
-  if curl -s "http://127.0.0.1:18545/" > /dev/null 2>&1; then break; fi
+  if curl -s "http://127.0.0.1:$NODE_A_RPC_PORT/" > /dev/null 2>&1; then break; fi
   sleep 1
 done
 
-echo "Letting node A produce blocks alone for 12 seconds (~6 blocks at 2s/block)..."
-sleep 12
+# ---------------------------------------------------------------------------
+# Step 5: NOW that node A is live, submit a real transaction from the
+# funded account. This is what actually gives node A a transaction to
+# produce a block from.
+# ---------------------------------------------------------------------------
+echo "=== Submitting a transaction from the funded account ==="
+SEND_OUT="$(QC_TX_FROM_SK_HEX="$FUNDED_SK" QC_TX_FROM_PK_HEX="$FUNDED_PK" QC_TX_NONCE=0 \
+  QC_RPC_URL="http://127.0.0.1:$NODE_A_RPC_PORT" "$SEND_TX_BIN")"
+echo "$SEND_OUT"
 
-HEIGHT_A_BEFORE_B="$(block_number 18545)"
+echo "Waiting up to 12 seconds for node A to include it in a block..."
+HEIGHT_A_BEFORE_B=0
+for i in $(seq 1 12); do
+  sleep 1
+  HEIGHT_A_BEFORE_B="$(block_number "$NODE_A_RPC_PORT")"
+  if [ "$HEIGHT_A_BEFORE_B" -ge 1 ]; then break; fi
+done
+
 echo "Node A height before B joins: $HEIGHT_A_BEFORE_B"
-if [ "$HEIGHT_A_BEFORE_B" -lt 2 ]; then
-  echo "FAIL: node A did not produce blocks on its own. Check node-a.log:"
+if [ "$HEIGHT_A_BEFORE_B" -lt 1 ]; then
+  echo "FAIL: node A never produced a block from the funded transaction. Check node-a.log:"
   cat "$WORKDIR/node-a.log"
   exit 1
 fi
 
 # ---------------------------------------------------------------------------
-# Step 4: NOW start node B, late, bootstrapping to node A. B starts at
-# height 0 while A is already several blocks ahead — B can only close that
-# gap via the real sync request/response protocol.
+# Step 6: NOW start node B, late, bootstrapping to node A. B starts at
+# height 0 while A is already ahead — B can only close that gap via the
+# real sync request/response protocol.
 # ---------------------------------------------------------------------------
 echo "=== Starting node B (late, must sync to catch up) ==="
 QC_KEYSTORE_PATH="$WORKDIR/validator-b-keystore.json" \
 QC_KEYSTORE_PASSWORD="integration-test-password-b" \
 QC_DB_PATH="$WORKDIR/db-b" \
 QC_GENESIS_PATH="$GENESIS_PATH" \
-QC_RPC_ADDR="127.0.0.1:18546" \
+QC_RPC_ADDR="127.0.0.1:$NODE_B_RPC_PORT" \
 QC_LISTEN_ADDR="/ip4/127.0.0.1/tcp/19002" \
 QC_BOOTSTRAP_PEERS="/ip4/127.0.0.1/tcp/19001" \
 "$NODE_BIN" > "$WORKDIR/node-b.log" 2>&1 &
@@ -142,15 +195,15 @@ NODE_B_PID=$!
 
 echo "Waiting for node B's RPC to come up..."
 for i in $(seq 1 20); do
-  if curl -s "http://127.0.0.1:18546/" > /dev/null 2>&1; then break; fi
+  if curl -s "http://127.0.0.1:$NODE_B_RPC_PORT/" > /dev/null 2>&1; then break; fi
   sleep 1
 done
 
 echo "Giving both nodes 20 seconds to connect, gossip, and sync..."
 sleep 20
 
-HEIGHT_A="$(block_number 18545)"
-HEIGHT_B="$(block_number 18546)"
+HEIGHT_A="$(block_number "$NODE_A_RPC_PORT")"
+HEIGHT_B="$(block_number "$NODE_B_RPC_PORT")"
 echo "Final height — node A: $HEIGHT_A, node B: $HEIGHT_B"
 
 echo ""
@@ -161,7 +214,7 @@ echo "=== node-b.log (last 30 lines) ==="
 tail -30 "$WORKDIR/node-b.log"
 
 # ---------------------------------------------------------------------------
-# Step 5: assertions.
+# Step 7: assertions.
 # ---------------------------------------------------------------------------
 FAIL=0
 
