@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::time::{SystemTime, UNIX_EPOCH};
+use crate::governance::{ProposalType, Vote};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -24,6 +25,37 @@ pub type TxHash = [u8; 32];
 /// we use a byte array internally.
 pub type Address = [u8; 32];
 
+/// M14 WIRING (core-dev review, P2): what a transaction actually does,
+/// beyond a plain value transfer. Added so the now-wired vesting/governance
+/// state in StateDB (see src/state/mod.rs) has a way to actually be
+/// mutated by a transaction, instead of only being readable.
+///
+/// `Transfer` (the default) is the pre-M14 behavior and is what every
+/// transaction was implicitly doing before this field existed.
+///
+/// BREAKING CHANGE: this is committed into both signable_bytes() and
+/// compute_tx_hash() (see below), which changes the wire format for
+/// signing and hashing. Coordinated update needed in qtc-client's
+/// serializeTransaction()/computeTxHash(). Acceptable now only because
+/// there is no live chain yet — see the equivalent state_root note in
+/// src/state/mod.rs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub enum TxAction {
+    #[default]
+    Transfer,
+    /// Claim whatever is currently claimable from the sender's
+    /// CliffLinearVesting schedule (founder/team/advisor grants).
+    ClaimCliffVesting,
+    /// Claim whatever is currently claimable from the sender's
+    /// LinearVesting schedule (milestone grants).
+    ClaimLinearVesting,
+    SubmitProposal { proposal_type: ProposalType, description: String },
+    CastMultisigVote { proposal_id: u64, vote: Vote },
+    CastValidatorVote { proposal_id: u64, vote: Vote },
+    ProposeSpend { recipient: Address, amount_usdc: u64, purpose: String },
+    ExecuteSpend { proposal_id: u64 },
+}
+
 /// A minimal signed transaction.
 /// Extend with contract call data when the VM lands (post-M10).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -36,6 +68,12 @@ pub struct Transaction {
     pub base_fee: u64, // must be >= current protocol base fee
     pub priority_fee: u64, // tip to block proposer
     pub gas_limit: u64,
+    /// M14 WIRING: what this transaction does. Defaults to Transfer via
+    /// #[serde(default)] for any deserializer that supports missing-field
+    /// defaults (JSON/RPC); bincode wire callers must supply it explicitly
+    /// since bincode is positional, not self-describing.
+    #[serde(default)]
+    pub action: TxAction,
     pub signature: Vec<u8>, // Dilithium2 signature bytes (2420 bytes for M1)
     pub received_at: u64, // unix timestamp, for eviction ordering
     /// AUDIT-FIX (signature verification): sender's full Dilithium2 public
@@ -69,12 +107,18 @@ impl Transaction {
     ///
     /// Layout: hash(32) || from(32) || to(32) || value(u64 LE)
     ///       || nonce(u64 LE) || base_fee(u64 LE) || priority_fee(u64 LE)
-    ///       || gas_limit(u64 LE) || sig_len_prefix(u64 LE, always 0 here)
+    ///       || gas_limit(u64 LE) || action_len(u64 LE) || action_bytes
+    ///       || sig_len_prefix(u64 LE, always 0 here)
     ///       || received_at(u64 LE, always 0 here)
     ///
     /// Deliberately does NOT include `from_pubkey` — that field is
     /// transport-only (added so the node can look up the key to verify
     /// against), not part of the signed content.
+    ///
+    /// M14 WIRING: `action` IS part of the signed content (unlike
+    /// from_pubkey) — it determines what the transaction actually does,
+    /// so a relayer must not be able to alter it without invalidating the
+    /// signature. Length-prefixed so it round-trips unambiguously.
     pub fn signable_bytes(&self) -> Vec<u8> {
         let mut v = Vec::with_capacity(32 + 32 + 32 + 8 * 5 + 8 + 8);
         v.extend_from_slice(&self.hash);
@@ -85,6 +129,9 @@ impl Transaction {
         v.extend_from_slice(&self.base_fee.to_le_bytes());
         v.extend_from_slice(&self.priority_fee.to_le_bytes());
         v.extend_from_slice(&self.gas_limit.to_le_bytes());
+        let action_bytes = bincode::serialize(&self.action).unwrap_or_default();
+        v.extend_from_slice(&(action_bytes.len() as u64).to_le_bytes());
+        v.extend_from_slice(&action_bytes);
         v.extend_from_slice(&0u64.to_le_bytes()); // signature length prefix (empty sig)
         // signature bytes themselves: empty, nothing to append
         v.extend_from_slice(&0u64.to_le_bytes()); // received_at, zeroed for signing
@@ -401,6 +448,7 @@ mod tests {
             base_fee,
             priority_fee,
             gas_limit: 21_000,
+            action: TxAction::Transfer,
             signature: Vec::new(), // filled in below, after signable_bytes() is stable
             received_at: now_secs(),
             from_pubkey: pk,
@@ -498,4 +546,4 @@ mod tests {
         assert_eq!(pool.len(), 2);
         assert!(pool.get(&make_tx(1, 0, 2_000, 50).hash).is_none());
     }
-        }
+    }
