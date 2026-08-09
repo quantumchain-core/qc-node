@@ -8,11 +8,23 @@
 // AUDIT-008 FIX: all three accounts (sender, recipient, coinbase) are read
 //   upfront before any writes. This prevents last-write-wins corruption when
 //   tx.from == coinbase or tx.to == coinbase.
+//
+// M14 WIRING (core-dev review, P2): execute_tx now dispatches on
+// tx.action. Transfer (the default/only kind that existed before this)
+// runs exactly as before. Every other action still pays gas exactly like
+// a Transfer (nonce bump + gas_cost debit/credit), but skips the
+// value-transfer step and instead mutates the vesting/governance state
+// now wired into StateDB (see src/state/mod.rs). Gas is charged even on
+// a failed action (e.g. voting twice) — same as real chains: submitting
+// an invalid action still costs the sender gas, which is what prevents
+// free-spam voting/proposal floods.
 
 use crate::chain::Block;
 use crate::state::StateDB;
-use crate::mempool::Transaction;
+use crate::mempool::{Transaction, TxAction};
 use crate::state::Address;
+use crate::governance::GovernanceError;
+use crate::vesting::VestingError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -23,6 +35,23 @@ pub enum ExecError {
     NonceMismatch(u64, u64),
     #[error("gas limit exceeded")]
     GasLimitExceeded,
+    #[error("no matching vesting schedule for this address")]
+    NoVestingSchedule,
+    #[error("vesting error: {0}")]
+    Vesting(String),
+    #[error("governance not initialized on this chain")]
+    GovernanceNotInitialized,
+    #[error("governance error: {0}")]
+    Governance(String),
+    #[error("ops fund not initialized on this chain")]
+    OpsFundNotInitialized,
+}
+
+impl From<VestingError> for ExecError {
+    fn from(e: VestingError) -> Self { ExecError::Vesting(e.to_string()) }
+}
+impl From<GovernanceError> for ExecError {
+    fn from(e: GovernanceError) -> Self { ExecError::Governance(e.to_string()) }
 }
 
 pub struct Executor;
@@ -35,9 +64,10 @@ impl Executor {
     ) -> Result<u64, ExecError> {
         let mut total_gas_used = 0u64;
         let base_fee = block.header.base_fee as u128;
+        let current_block = block.header.number;
 
         for tx in &block.transactions {
-            let gas_used = Self::execute_tx(state, tx, base_fee, coinbase)?;
+            let gas_used = Self::execute_tx(state, tx, base_fee, coinbase, current_block)?;
 
             // AUDIT-007: use checked_add to prevent u64 overflow
             total_gas_used = total_gas_used
@@ -61,6 +91,7 @@ impl Executor {
         tx: &Transaction,
         base_fee: u128,
         coinbase: &Address,
+        current_block: u64,
     ) -> Result<u64, ExecError> {
         // AUDIT-008 FIX: read ALL accounts before ANY writes.
         // If tx.from == coinbase or tx.to == coinbase, the old code would
@@ -76,7 +107,11 @@ impl Executor {
             return Err(ExecError::NonceMismatch(sender_acc.nonce, tx.nonce));
         }
 
-        let value    = tx.value as u128;
+        // M14 WIRING: non-Transfer actions carry no `value` transfer —
+        // only gas is charged. `value` is ignored for these (wallets
+        // should send 0, but a nonzero value is simply not moved rather
+        // than treated as an error, to keep this permissive for now).
+        let value = if matches!(tx.action, TxAction::Transfer) { tx.value as u128 } else { 0 };
         let gas_cost = (tx.gas_limit as u128) * base_fee;
         let total_cost = value + gas_cost;
 
@@ -127,6 +162,98 @@ impl Executor {
             state.set_account(*coinbase, coinbase_acc);
         }
 
+        // M14 WIRING: run the action itself, now that gas/nonce accounting
+        // is committed. A failing action returns Err (the whole block/tx
+        // is then rejected by the caller) — gas already deducted above is
+        // NOT refunded on that path, matching normal chain behavior.
+        Self::dispatch_action(state, tx, current_block)?;
+
         Ok(tx.gas_limit)
     }
-}
+
+    /// M14 WIRING: mutate vesting/governance state per tx.action.
+    /// No-op for TxAction::Transfer (the normal, pre-M14 path).
+    fn dispatch_action(
+        state: &mut StateDB,
+        tx: &Transaction,
+        current_block: u64,
+    ) -> Result<(), ExecError> {
+        match &tx.action {
+            TxAction::Transfer => Ok(()),
+
+            TxAction::ClaimCliffVesting => {
+                let mut schedule = state.get_cliff_vesting(&tx.from)
+                    .cloned()
+                    .ok_or(ExecError::NoVestingSchedule)?;
+                let claimed = schedule.claim(current_block);
+                state.set_cliff_vesting(tx.from, schedule);
+                let mut acc = state.get_account(&tx.from);
+                acc.balance = acc.balance.saturating_add(claimed);
+                state.set_account(tx.from, acc);
+                Ok(())
+            }
+
+            TxAction::ClaimLinearVesting => {
+                let mut schedule = state.get_linear_vesting(&tx.from)
+                    .cloned()
+                    .ok_or(ExecError::NoVestingSchedule)?;
+                let claimed = schedule.claim(current_block);
+                state.set_linear_vesting(tx.from, schedule);
+                let mut acc = state.get_account(&tx.from);
+                acc.balance = acc.balance.saturating_add(claimed);
+                state.set_account(tx.from, acc);
+                Ok(())
+            }
+
+            TxAction::ProposeSpend { recipient, amount_usdc, purpose } => {
+                let fund = state.ops_fund_mut().as_mut()
+                    .ok_or(ExecError::OpsFundNotInitialized)?;
+                fund.propose_spend(*recipient, *amount_usdc, purpose.clone(), current_block)?;
+                Ok(())
+            }
+
+            TxAction::ExecuteSpend { proposal_id } => {
+                let fund = state.ops_fund_mut().as_mut()
+                    .ok_or(ExecError::OpsFundNotInitialized)?;
+                let amount = fund.try_execute(*proposal_id, current_block)?;
+                // NOTE: TimelockedOpsFund tracks a USDC balance, a
+                // separate unit from the native QTC `Account.balance`
+                // moved elsewhere in this function — no QTC-balance
+                // change happens here, only the fund's internal ledger.
+                // Wiring USDC custody to an actual on-chain asset is a
+                // separate, not-yet-designed piece of work.
+                let _ = amount;
+                Ok(())
+            }
+
+            TxAction::SubmitProposal { proposal_type, description } => {
+                let gov = state.governance_mut().as_mut()
+                    .ok_or(ExecError::GovernanceNotInitialized)?;
+                // active_validator_count: needed for quorum math but this
+                // executor has no registry reference. Passing 0 here is a
+                // known gap — quorum_pct() math against 0 validators means
+                // validator_quorum_met() trivially passes for any
+                // token-vote proposal. Flagged, not fixed: wiring the
+                // real registry count through to the executor is the
+                // next piece of this feature, not silently faked here.
+                gov.submit_proposal(tx.from, proposal_type.clone(), description.clone(),
+                    current_block, 0)?;
+                Ok(())
+            }
+
+            TxAction::CastMultisigVote { proposal_id, vote } => {
+                let gov = state.governance_mut().as_mut()
+                    .ok_or(ExecError::GovernanceNotInitialized)?;
+                gov.cast_multisig_vote(tx.from, *proposal_id, vote.clone(), current_block)?;
+                Ok(())
+            }
+
+            TxAction::CastValidatorVote { proposal_id, vote } => {
+                let gov = state.governance_mut().as_mut()
+                    .ok_or(ExecError::GovernanceNotInitialized)?;
+                gov.cast_validator_vote(tx.from, *proposal_id, vote.clone())?;
+                Ok(())
+            }
+        }
+    }
+            }
