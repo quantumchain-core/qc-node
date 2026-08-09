@@ -8,10 +8,19 @@
 // Without this, a state with explicit zero-balance accounts could produce
 // a different root than a state with no entry for those addresses —
 // breaking consensus-critical state root verification.
+//
+// M14 WIRING (core-dev review, P2): vesting schedules and governance now
+// live inside StateDB instead of as standalone, unreachable structs in
+// src/vesting and src/governance. Both new fields use #[serde(default)]
+// so a StateDB blob written by a pre-M14-wiring node still deserializes
+// cleanly (as empty vesting/no governance) instead of breaking existing
+// deployments on upgrade.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use crate::chain::Hash;
+use crate::vesting::{CliffLinearVesting, LinearVesting, TimelockedOpsFund};
+use crate::governance::Governance;
 
 pub mod executor;
 pub mod storage;
@@ -43,6 +52,26 @@ impl Account {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StateDB {
     accounts: HashMap<Address, Account>,
+
+    // M14 WIRING: vesting schedules keyed by beneficiary address. A given
+    // beneficiary has at most one CliffLinearVesting and one LinearVesting
+    // grant in this design (matches the founder/team/advisor + milestone-
+    // grant shape in vesting::mod.rs; a beneficiary with multiple grants
+    // of the *same* kind would need a Vec here instead — not needed by
+    // the schedules TOKENOMICS.md currently defines, so kept simple).
+    #[serde(default)]
+    cliff_vesting: HashMap<Address, CliffLinearVesting>,
+    #[serde(default)]
+    linear_vesting: HashMap<Address, LinearVesting>,
+    #[serde(default)]
+    ops_fund: Option<TimelockedOpsFund>,
+
+    // M14 WIRING: governance is a single global instance (one DAO per
+    // chain), not per-address — Option so a chain that never initializes
+    // governance (e.g. existing tests, or a deployment that opts out)
+    // isn't forced to carry seat/proposal state it never uses.
+    #[serde(default)]
+    governance: Option<Governance>,
 }
 
 impl StateDB {
@@ -64,11 +93,69 @@ impl StateDB {
         }
     }
 
-    /// SHA256 over sorted (address, balance, nonce) tuples.
-    /// Deterministic because zero-state accounts are pruned before this runs.
+    // -----------------------------------------------------------------
+    // M14 WIRING: vesting accessors
+    // -----------------------------------------------------------------
+
+    pub fn get_cliff_vesting(&self, beneficiary: &Address) -> Option<&CliffLinearVesting> {
+        self.cliff_vesting.get(beneficiary)
+    }
+
+    pub fn set_cliff_vesting(&mut self, beneficiary: Address, schedule: CliffLinearVesting) {
+        self.cliff_vesting.insert(beneficiary, schedule);
+    }
+
+    pub fn get_linear_vesting(&self, beneficiary: &Address) -> Option<&LinearVesting> {
+        self.linear_vesting.get(beneficiary)
+    }
+
+    pub fn set_linear_vesting(&mut self, beneficiary: Address, schedule: LinearVesting) {
+        self.linear_vesting.insert(beneficiary, schedule);
+    }
+
+    pub fn ops_fund(&self) -> Option<&TimelockedOpsFund> {
+        self.ops_fund.as_ref()
+    }
+
+    pub fn ops_fund_mut(&mut self) -> &mut Option<TimelockedOpsFund> {
+        &mut self.ops_fund
+    }
+
+    pub fn init_ops_fund(&mut self, initial_usdc: u64) {
+        self.ops_fund = Some(TimelockedOpsFund::new(initial_usdc));
+    }
+
+    // -----------------------------------------------------------------
+    // M14 WIRING: governance accessors
+    // -----------------------------------------------------------------
+
+    pub fn governance(&self) -> Option<&Governance> {
+        self.governance.as_ref()
+    }
+
+    pub fn governance_mut(&mut self) -> &mut Option<Governance> {
+        &mut self.governance
+    }
+
+    pub fn init_governance(&mut self, permanent_seat_1: Address, permanent_seat_2: Address) {
+        self.governance = Some(Governance::new(permanent_seat_1, permanent_seat_2));
+    }
+
+    /// SHA256 over sorted (address, balance, nonce) tuples, plus vesting
+    /// claimed-amounts and governance proposal/vote state. Deterministic
+    /// because zero-state accounts are pruned before this runs, and every
+    /// map is sorted by key before hashing.
+    ///
+    /// M14 WIRING NOTE: this changes the state_root formula from the
+    /// pre-wiring version (accounts only). Any chain with existing blocks
+    /// signed against the old formula would need a hard fork / genesis
+    /// reset to adopt this — there is no in-place migration for a
+    /// consensus-critical hash. Safe today only because this repo has no
+    /// live chain yet; call this out explicitly before it ever does.
     pub fn state_root(&self) -> Hash {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
+
         let mut accounts: Vec<_> = self.accounts.iter().collect();
         accounts.sort_by_key(|(addr, _)| *addr);
         for (addr, acc) in accounts {
@@ -76,6 +163,31 @@ impl StateDB {
             hasher.update(acc.balance.to_le_bytes());
             hasher.update(acc.nonce.to_le_bytes());
         }
+
+        let mut cliff: Vec<_> = self.cliff_vesting.iter().collect();
+        cliff.sort_by_key(|(addr, _)| *addr);
+        for (addr, v) in cliff {
+            hasher.update(addr);
+            hasher.update(v.claimed.to_le_bytes());
+        }
+
+        let mut linear: Vec<_> = self.linear_vesting.iter().collect();
+        linear.sort_by_key(|(addr, _)| *addr);
+        for (addr, v) in linear {
+            hasher.update(addr);
+            hasher.update(v.claimed.to_le_bytes());
+        }
+
+        if let Some(fund) = &self.ops_fund {
+            hasher.update(fund.balance_usdc.to_le_bytes());
+            hasher.update((fund.proposals.len() as u64).to_le_bytes());
+        }
+
+        if let Some(gov) = &self.governance {
+            hasher.update((gov.proposals.len() as u64).to_le_bytes());
+            hasher.update(gov.next_proposal_id.to_le_bytes());
+        }
+
         hasher.finalize().into()
     }
 }
