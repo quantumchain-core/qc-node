@@ -109,6 +109,9 @@ fn dispatch(state: &AppState, req: RpcRequest) -> RpcResponse {
         "qtc_getValidator"        => qtc_methods::qtc_get_validator(state, &req.params),
         "qtc_getNetworkStats"     => Ok(qtc_methods::qtc_get_network_stats(state)),
         "qtc_getValidators"       => Ok(qtc_methods::qtc_get_validators(state)),
+        // M14 WIRING (core-dev review, P2): read-only vesting/governance
+        "qtc_getVestingSchedule"  => qtc_methods::qtc_get_vesting_schedule(state, &req.params),
+        "qtc_getProposal"         => qtc_methods::qtc_get_proposal(state, &req.params),
 
         other => return RpcResponse::err(
             id, ERR_METHOD_NOT_FOUND,
@@ -248,3 +251,4 @@ mod tests {
         std::env::remove_var("QC_RPC_RATE_LIMIT");
     }
 }
+
