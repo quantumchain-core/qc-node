@@ -192,11 +192,12 @@ impl StateDB {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::chain::{Block, BlockHeader};
-    use crate::mempool::Transaction;
+    use crate::mempool::{Transaction, TxAction};
     use crate::state::executor::Executor;
 
     fn make_tx(from: [u8; 32], to: [u8; 32], value: u64, nonce: u64) -> Transaction {
@@ -209,6 +210,7 @@ mod tests {
             base_fee: 1,
             priority_fee: 0,
             gas_limit: 21,
+            action: TxAction::Transfer,
             signature: vec![0u8; 2420],
             received_at: 0,
             // Executor operates on transactions already accepted by the
