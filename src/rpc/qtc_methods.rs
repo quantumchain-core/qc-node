@@ -4,6 +4,9 @@
 // qtc_getValidator(address)  — validator stats by address
 // qtc_getNetworkStats()      — network-wide statistics  
 // qtc_getValidators()        — list all validators (from storage)
+// qtc_getVestingSchedule(address) — M14 WIRING: read a beneficiary's
+//   vesting schedule(s) and how much is currently claimable.
+// qtc_getProposal(id)             — M14 WIRING: read a governance proposal.
 
 use serde_json::{json, Value};
 use crate::rpc::methods::AppState;
@@ -99,3 +102,74 @@ pub fn qtc_get_validators(state: &AppState) -> Value {
         "currentBlock": format!("0x{:x}", head.number)
     })
 }
+
+/// qtc_getVestingSchedule(address) → M14 WIRING
+/// Returns whichever vesting schedule(s) exist for this address, plus
+/// claimable-now amounts computed against the current chain head. Read-
+/// only: does not claim anything (submit a ClaimCliffVesting/
+/// ClaimLinearVesting transaction via eth_sendRawTransaction for that).
+pub fn qtc_get_vesting_schedule(state: &AppState, params: &Value) -> Result<Value, String> {
+    let addr_str = params.get(0)
+        .and_then(|v| v.as_str())
+        .ok_or("missing address param")?;
+    let addr = parse_addr(addr_str)?;
+
+    let db = state.state_db.lock().unwrap();
+    let head = state.chain_head.lock().unwrap();
+    let current_block = head.number;
+
+    let cliff = db.get_cliff_vesting(&addr).map(|v| json!({
+        "totalAmount": format!("0x{:x}", v.total_amount),
+        "claimed": format!("0x{:x}", v.claimed),
+        "claimableNow": format!("0x{:x}", v.claimable_at(current_block)),
+        "startBlock": format!("0x{:x}", v.start_block),
+        "cliffBlocks": format!("0x{:x}", v.cliff_blocks),
+        "vestingBlocks": format!("0x{:x}", v.vesting_blocks),
+    }));
+
+    let linear = db.get_linear_vesting(&addr).map(|v| json!({
+        "totalAmount": format!("0x{:x}", v.total_amount),
+        "claimed": format!("0x{:x}", v.claimed),
+        "claimableNow": format!("0x{:x}", v.claimable_at(current_block)),
+        "startBlock": format!("0x{:x}", v.start_block),
+        "vestingBlocks": format!("0x{:x}", v.vesting_blocks),
+    }));
+
+    if cliff.is_none() && linear.is_none() {
+        return Ok(Value::Null);
+    }
+
+    Ok(json!({
+        "address": addr_str,
+        "cliffLinear": cliff,
+        "linear": linear,
+    }))
+}
+
+/// qtc_getProposal(id) → M14 WIRING
+/// Returns a governance proposal by id, including current vote tallies.
+/// Returns null if governance isn't initialized on this chain, or the
+/// proposal id doesn't exist.
+pub fn qtc_get_proposal(state: &AppState, params: &Value) -> Result<Value, String> {
+    let id = params.get(0)
+        .and_then(|v| v.as_u64())
+        .ok_or("missing or invalid proposal id param")?;
+
+    let db = state.state_db.lock().unwrap();
+    let Some(gov) = db.governance() else { return Ok(Value::Null) };
+    let Some(p) = gov.get_proposal(id) else { return Ok(Value::Null) };
+
+    Ok(json!({
+        "id": p.id,
+        "proposer": format!("0x{}", hex::encode(p.proposer)),
+        "proposalType": &p.proposal_type,
+        "description": &p.description,
+        "proposedAtBlock": format!("0x{:x}", p.proposed_at_block),
+        "status": &p.status,
+        "multisigYes": p.multisig_yes_count(),
+        "multisigNo": p.multisig_no_count(),
+        "multisigApproved": p.multisig_approved(),
+        "validatorQuorumMet": p.validator_quorum_met(),
+    }))
+}
+
