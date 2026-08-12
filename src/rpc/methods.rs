@@ -169,6 +169,13 @@ pub fn compute_tx_hash(tx: &Transaction) -> [u8; 32] {
     hasher.update(tx.base_fee.to_le_bytes());
     hasher.update(tx.priority_fee.to_le_bytes());
     hasher.update(tx.gas_limit.to_le_bytes());
+    // M14 WIRING: action is now committed into the hash too — without
+    // this, a relayer could swap the action on an already-hash-verified
+    // tx before a second submission, producing a different signed
+    // payload (signable_bytes() already covers action) but the same
+    // declared hash, defeating the AUDIT-018 hash-matches-content check.
+    let action_bytes = bincode::serialize(&tx.action).unwrap_or_default();
+    hasher.update(action_bytes);
     hasher.finalize().into()
 }
 
@@ -186,6 +193,7 @@ pub fn tx_to_json(tx: &Transaction) -> Value {
         "baseFee": u64_to_hex(tx.base_fee),
         "priorityFee": u64_to_hex(tx.priority_fee),
         "gasLimit": u64_to_hex(tx.gas_limit),
+        "action": tx.action,
     })
 }
 
@@ -299,6 +307,7 @@ pub fn eth_send_raw_transaction(state: &AppState, params: &Value) -> Result<Valu
 mod tests {
     use super::*;
     use crate::state::{Account, Storage};
+    use crate::mempool::TxAction;
     // The one real dispatcher lives in rpc::mod (see the DEDUP FIX note
     // above) — reachable here because methods.rs is a child module of
     // rpc, which can see rpc's private items.
@@ -328,6 +337,7 @@ mod tests {
             base_fee: 1_000,
             priority_fee: 50,
             gas_limit: 21_000,
+            action: TxAction::Transfer,
             signature: Vec::new(),
             received_at: 0,
             from_pubkey: pk,
@@ -519,4 +529,4 @@ mod tests {
         let resp = dispatch(&state, req);
         assert_eq!(resp.result.unwrap(), json!(u64_to_hex(TESTNET_CHAIN_ID)));
     }
-    }
+}
