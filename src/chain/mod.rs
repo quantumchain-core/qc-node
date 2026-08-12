@@ -129,6 +129,7 @@ mod tests {
             base_fee: 0,
             priority_fee: 0,
             gas_limit: 0,
+            action: crate::mempool::TxAction::Transfer,
             signature: Vec::new(),
             received_at: 0,
             from_pubkey: Vec::new(),
