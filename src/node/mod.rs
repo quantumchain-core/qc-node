@@ -333,6 +333,7 @@ mod tests {
             base_fee: 1_000,
             priority_fee: 50,
             gas_limit: 21_000,
+            action: crate::mempool::TxAction::Transfer,
             signature: Vec::new(),
             received_at: 0,
             from_pubkey: pk,
