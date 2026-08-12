@@ -546,4 +546,4 @@ mod tests {
         assert_eq!(pool.len(), 2);
         assert!(pool.get(&make_tx(1, 0, 2_000, 50).hash).is_none());
     }
-    }
+        }
