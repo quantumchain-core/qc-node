@@ -95,17 +95,21 @@ export QC_RPC_ADDR=0.0.0.0:8545
 ./target/release/node
 ```
 
-You will see:
+You will see something like:
 ```
 ================================================
-  QTC NODE -- network: TESTNET
-  (testnet tokens have NO monetary value)
+  QTC NODE -- TESTNET 
 ================================================
-generated new keypair, saved to ./qc-keystore.json
+✅ Created encrypted keystore at ./qc-keystore.json
 validator address: 0x<your-64-char-address>
+Validator registry: 1 validator(s)
 ```
 
-**Copy your validator address immediately.**
+(On every later restart, once `./qc-keystore.json` already exists, that
+third line reads `✅ Loaded encrypted keystore from ./qc-keystore.json`
+instead — same address, no new identity generated.)
+
+**Copy your validator address immediately** (the `validator address: 0x...` line).
 **Backup qc-keystore.json — losing it means losing your validator identity and all earned rewards.**
 
 Press Ctrl+C after copying the address.
@@ -143,6 +147,25 @@ curl -o genesis/testnet.json \
 
 ---
 
+## Configuration Options
+
+The variables in Step 4 are the minimum to get a node running — everything
+below is optional, but **`QC_BOOTSTRAP_PEERS` matters more than it looks**:
+without it, your node has no way to discover any other peer at all (there's
+no other discovery mechanism yet, e.g. no mDNS) and will just run alone,
+never actually joining the network even though it starts up cleanly with
+no errors.
+
+| Variable | Default if unset | What it does |
+|---|---|---|
+| `QC_BOOTSTRAP_PEERS` | *(empty — no peers)* | **Get this from your registration confirmation or ask in the validator channel.** Comma-separated libp2p multiaddrs of already-running peers, e.g. `/ip4/1.2.3.4/tcp/30333/p2p/12D3KooW...`. Without at least one, your node is network-isolated. |
+| `QC_LISTEN_ADDR` | `/ip4/0.0.0.0/tcp/30333` | The libp2p multiaddr your node listens on for incoming P2P connections. Only change this if you need a non-default port (e.g. running two nodes on one host). |
+| `QC_COINBASE` | *(unset — fee recipient = your validator address)* | 32-byte hex address (with or without `0x`) to receive block rewards/fees at, if different from your validator identity address. Most operators should leave this unset. |
+| `QC_RPC_RATE_LIMIT` | `100` (requests/sec) | Global cap across all RPC callers to your node — not per-caller. Raise if your own tooling is hitting it; be cautious raising it much on a publicly-reachable RPC port. |
+| `QC_RPC_ADDR` | `127.0.0.1:8545` (localhost-only) | **Must be set explicitly to `0.0.0.0:8545` (as in Step 4 above) if you want to query your node's RPC from outside the server itself.** The localhost-only default is deliberate — a missing/dropped env var on restart should fail safe (no RPC exposure), not silently open the port to the public internet. |
+
+---
+
 ## Step 7 — Run Your Validator
 
 Create a launch script:
@@ -156,6 +179,7 @@ export QC_KEYSTORE_PATH=./qc-keystore.json
 export QC_DB_PATH=./qc-data
 export QC_GENESIS_PATH=./genesis/testnet.json
 export QC_RPC_ADDR=0.0.0.0:8545
+export QC_BOOTSTRAP_PEERS="/ip4/1.2.3.4/tcp/30333/p2p/12D3KooW..."   # from Step 5/6 — required to actually join the network
 ./target/release/node
 SCRIPT
 chmod +x run-validator.sh
@@ -169,6 +193,7 @@ nohup env QC_KEYSTORE_PASSWORD=your_strong_password_here \
   QC_DB_PATH=./qc-data \
   QC_GENESIS_PATH=./genesis/testnet.json \
   QC_RPC_ADDR=0.0.0.0:8545 \
+  QC_BOOTSTRAP_PEERS="/ip4/1.2.3.4/tcp/30333/p2p/12D3KooW..." \
   ./target/release/node > validator.log 2>&1 &
 echo "Validator PID: $!"
 ```
@@ -203,6 +228,7 @@ QC_KEYSTORE_PATH=/home/ubuntu/qc-node/qc-keystore.json
 QC_DB_PATH=/home/ubuntu/qc-node/qc-data
 QC_GENESIS_PATH=/home/ubuntu/qc-node/genesis/testnet.json
 QC_RPC_ADDR=0.0.0.0:8545
+QC_BOOTSTRAP_PEERS=/ip4/1.2.3.4/tcp/30333/p2p/12D3KooW...
 ENV
 
 sudo systemctl daemon-reload
@@ -224,8 +250,12 @@ curl -s -X POST http://localhost:8545 \
 # Check your balance
 curl -s -X POST http://localhost:8545 \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"eth_getBalance","params":["0x<your-address>","latest"],"id":1}'
+  -d '{"jsonrpc":"2.0","method":"eth_getBalance","params":["0x<your-address>"],"id":1}'
 ```
+
+(`eth_getBalance` currently only reads the address param — a second
+`"latest"`/block-tag argument, if you pass one, is accepted but ignored;
+there's no historical-balance-by-block support yet.)
 
 ---
 
@@ -236,15 +266,23 @@ Add these ingress rules in Oracle Cloud console:
 | Port | Protocol | Purpose |
 |---|---|---|
 | 8545 | TCP | JSON-RPC API |
-| 30333 | TCP | P2P gossip |
+| 30333 | TCP | P2P gossip (matches `QC_LISTEN_ADDR`'s default port — update this rule too if you changed that) |
 
 ---
 
 ## Troubleshooting
 
-**"loaded keypair from..."** — Good, identity is stable
+**"✅ Loaded encrypted keystore from..."** — Good, identity is stable.
 
-**"generated new keypair..."** — New identity. If registered, re-register.
+**"✅ Created encrypted keystore at..."** — New identity, first run at this
+`QC_KEYSTORE_PATH`. If you'd already registered a different address, make
+sure `QC_KEYSTORE_PATH` points at the *same* keystore file as before —
+this message means it's about to generate a new (unregistered) identity.
+
+**Node starts cleanly, no errors, but block number never advances and you
+never see any peer activity** — almost always `QC_BOOTSTRAP_PEERS` is
+unset or unreachable. See Configuration Options above; this is the most
+common way a validator silently never actually joins.
 
 **"unknown parent" errors** — Chain out of sync. Delete qc-data/ and restart.
 
