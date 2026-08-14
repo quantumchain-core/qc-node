@@ -491,9 +491,15 @@ mod tests {
         assert_eq!(outbox.len(), 1);
         assert!(matches!(outbox[0], GossipMsg::NewBlock(_)));
 
-        // Sender balance updated: 100_000_000 - 10 - 21_000*1_000
+        // Sender balance updated. Was `100_000_000 - 10 - 21_000*1_000`
+        // under the pre-P3 assumption that base_fee never moves — now
+        // that next_base_fee() actually adjusts (genesis has gas_used=0
+        // on a 10,000,000 gas_limit block, so base_fee falls 1000 -> 875,
+        // per the ±1/8-of-target formula) and priority_fee is actually
+        // paid (925 = 875 + tx's priority_fee of 50), the real per-gas
+        // price for this block is 925, not the old fixed 1_000.
         let alice = app.state_db.lock().unwrap().get_account(&from_addr);
-        assert_eq!(alice.balance, 100_000_000 - 10 - 21_000_000);
+        assert_eq!(alice.balance, 100_000_000 - 10 - 21_000 * 925);
         assert_eq!(alice.nonce, 1);
     }
 
