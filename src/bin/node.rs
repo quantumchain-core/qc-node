@@ -59,6 +59,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let coinbase = load_coinbase(&pk)?;
     let producer = Producer::new(sk, pk.clone(), coinbase);
 
+    // RUN_VALIDATOR.md fix (core-dev review): the doc tells operators to
+    // "copy your validator address immediately" from the startup output,
+    // but nothing here ever actually printed it — the address is derived
+    // silently and only shown if/when it happens to appear somewhere else
+    // (e.g. a genesis file the operator wrote themselves). Print it
+    // explicitly so the doc's instruction is actually followable.
+    let validator_address = address_from_pubkey(&pk);
+    println!("validator address: 0x{}", hex::encode(validator_address));
+    if coinbase != validator_address {
+        println!("coinbase (fee recipient, via QC_COINBASE): 0x{}", hex::encode(coinbase));
+    }
+
     let registry = match std::env::var("QC_GENESIS_PATH") {
         Ok(path) => ValidatorRegistry::load_from_file(&path)?,
         Err(_) => ValidatorRegistry::single(&pk),
