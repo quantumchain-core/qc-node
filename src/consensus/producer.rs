@@ -12,6 +12,43 @@ use crate::state::{StateDB, Executor, Storage};
 use crate::crypto::sign;
 use super::registry::address_from_pubkey;
 
+/// Floor for the protocol base fee. Without a floor, a sustained run of
+/// empty/low-usage blocks would let base_fee decay toward (and, with
+/// integer division, potentially hit) zero — at which point the ±1/8
+/// adjustment step itself becomes zero forever (0 * anything / 8 == 0),
+/// permanently stuck. 1 keeps the adjustment mechanism always able to move.
+pub const MIN_BASE_FEE: u64 = 1;
+
+/// P3 FIX (core-dev review): EIP-1559-style base fee adjustment.
+/// MILESTONES.md already claimed this existed ("target = GAS_LIMIT/2,
+/// ±1/8 per block") — it didn't; base_fee was just carried forward from
+/// the parent unchanged. This is the actual implementation of what was
+/// documented.
+///
+/// target_gas = gas_limit / 2. If the parent block used more than target,
+/// base_fee rises (up to +1/8); less than target, it falls (down to
+/// -1/8, floored at MIN_BASE_FEE); exactly target, unchanged.
+pub fn next_base_fee(parent: &BlockHeader) -> u64 {
+    let target_gas = parent.gas_limit / 2;
+    if target_gas == 0 {
+        return parent.base_fee.max(MIN_BASE_FEE);
+    }
+
+    let parent_base_fee = parent.base_fee as u128;
+
+    if parent.gas_used == target_gas {
+        parent.base_fee.max(MIN_BASE_FEE)
+    } else if parent.gas_used > target_gas {
+        let gas_delta = (parent.gas_used - target_gas) as u128;
+        let delta = ((parent_base_fee * gas_delta) / (target_gas as u128) / 8).max(1);
+        (parent_base_fee + delta).min(u64::MAX as u128) as u64
+    } else {
+        let gas_delta = (target_gas - parent.gas_used) as u128;
+        let delta = (parent_base_fee * gas_delta) / (target_gas as u128) / 8;
+        parent.base_fee.saturating_sub(delta as u64).max(MIN_BASE_FEE)
+    }
+}
+
 pub struct Producer {
     pub validator_sk: Vec<u8>,  // Dilithium2 secret key (2560 bytes)
     pub validator_pk: Vec<u8>,  // Dilithium2 public key (1312 bytes)
@@ -48,7 +85,9 @@ impl Producer {
             proposer: address_from_pubkey(&self.validator_pk), // M10: derived from pk
             tx_root: merkle_root(&txs),
             state_root: [0u8; 32],
-            base_fee: parent.header.base_fee,
+            // P3 FIX: was `parent.header.base_fee` (static forever) —
+            // now actually adjusts with demand, per next_base_fee() above.
+            base_fee: next_base_fee(&parent.header),
             gas_used: 0,
             gas_limit: 10_000_000,
             signature: vec![],
@@ -196,5 +235,76 @@ mod tests {
         let block = producer.produce_block(&mut mempool, &mut state, &storage, &parent).unwrap();
 
         assert_eq!(block.header.proposer, address_from_pubkey(&producer.validator_pk));
+    }
+
+    // -----------------------------------------------------------------
+    // P3 FIX: next_base_fee tests (core-dev review)
+    // -----------------------------------------------------------------
+
+    fn header_with(base_fee: u64, gas_used: u64, gas_limit: u64) -> BlockHeader {
+        BlockHeader {
+            parent_hash: [0u8; 32],
+            number: 1,
+            slot: 1,
+            timestamp: 0,
+            proposer: [0u8; 32],
+            tx_root: [0u8; 32],
+            state_root: [0u8; 32],
+            base_fee,
+            gas_used,
+            gas_limit,
+            signature: vec![],
+        }
+    }
+
+    #[test]
+    fn test_base_fee_unchanged_at_target() {
+        // gas_used exactly at target (gas_limit / 2) -> no change
+        let parent = header_with(1_000, 5_000_000, 10_000_000);
+        assert_eq!(next_base_fee(&parent), 1_000);
+    }
+
+    #[test]
+    fn test_base_fee_rises_when_full() {
+        // gas_used == gas_limit (double the target) -> base fee rises
+        let parent = header_with(1_000, 10_000_000, 10_000_000);
+        let next = next_base_fee(&parent);
+        assert!(next > 1_000, "expected base fee to rise, got {next}");
+        // max theoretical single-block increase is +1/8 (=125 here)
+        assert!(next <= 1_000 + 125);
+    }
+
+    #[test]
+    fn test_base_fee_falls_when_empty() {
+        // gas_used == 0 -> base fee falls
+        let parent = header_with(1_000, 0, 10_000_000);
+        let next = next_base_fee(&parent);
+        assert!(next < 1_000, "expected base fee to fall, got {next}");
+        assert!(next >= 1_000 - 125);
+    }
+
+    #[test]
+    fn test_base_fee_never_drops_below_floor() {
+        // starting already at the floor, a sequence of empty blocks must
+        // never push it to zero or below MIN_BASE_FEE.
+        let mut base_fee = MIN_BASE_FEE;
+        for _ in 0..50 {
+            let parent = header_with(base_fee, 0, 10_000_000);
+            base_fee = next_base_fee(&parent);
+            assert!(base_fee >= MIN_BASE_FEE);
+        }
+    }
+
+    #[test]
+    fn test_base_fee_converges_toward_target_over_many_blocks() {
+        // A sustained run of full blocks should keep pushing base_fee up
+        // block after block (not just a one-time bump).
+        let mut base_fee = 1_000u64;
+        for _ in 0..10 {
+            let parent = header_with(base_fee, 10_000_000, 10_000_000);
+            let next = next_base_fee(&parent);
+            assert!(next > base_fee);
+            base_fee = next;
+        }
     }
 }
