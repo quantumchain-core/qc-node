@@ -257,6 +257,111 @@ mod tests {
         assert_eq!(state.get_account(&coinbase).balance, 21);
     }
 
+    // P3 FIX (core-dev review): priority_fee must actually be paid to the
+    // coinbase, not just used for mempool ordering. Regression test for
+    // the gap flagged in the original review — before this fix, gas_cost
+    // was always exactly gas_limit * block_base_fee, completely ignoring
+    // priority_fee.
+    #[test]
+    fn test_priority_fee_is_paid_to_coinbase() {
+        let mut state = StateDB::new();
+        let alice: Address = [1u8; 32];
+        let bob: Address = [2u8; 32];
+        let coinbase: Address = [3u8; 32];
+        state.set_account(alice, Account { balance: 1_000_000, nonce: 0, ..Default::default() });
+
+        // block base_fee = 10, tx offers priority_fee = 5, tx max fee
+        // (tx.base_fee) = 100 (well above what's needed, so it doesn't
+        // clamp the effective fee). Expected effective_fee_per_gas =
+        // min(100, 10 + 5) = 15.
+        let tx = Transaction {
+            hash: [0u8; 32],
+            from: alice,
+            to: bob,
+            value: 0,
+            nonce: 0,
+            base_fee: 100,   // tx's own max fee
+            priority_fee: 5,
+            gas_limit: 1_000,
+            action: TxAction::Transfer,
+            signature: vec![0u8; 2420],
+            received_at: 0,
+            from_pubkey: vec![0u8; 1312],
+        };
+
+        let block = Block {
+            header: BlockHeader {
+                parent_hash: [0u8; 32],
+                number: 1,
+                slot: 0,
+                timestamp: 0,
+                proposer: [0u8; 32],
+                tx_root: [0u8; 32],
+                state_root: [0u8; 32],
+                gas_limit: 10_000_000,
+                gas_used: 1_000,
+                base_fee: 10, // the block/protocol base fee
+                signature: vec![0u8; 2420],
+            },
+            transactions: vec![tx],
+        };
+
+        Executor::execute_block(&mut state, &block, &coinbase).unwrap();
+
+        // effective_fee_per_gas (15) * gas_limit (1000) = 15_000, all to coinbase
+        assert_eq!(state.get_account(&coinbase).balance, 15_000);
+        assert_eq!(state.get_account(&alice).balance, 1_000_000 - 15_000);
+    }
+
+    #[test]
+    fn test_priority_fee_capped_at_tx_max_fee() {
+        // tx.base_fee (max fee) = 12, block base_fee = 10, priority_fee = 5.
+        // Uncapped that would be 15/gas, but the tx only authorized up to
+        // 12/gas -- effective_fee_per_gas must clamp to 12, not 15.
+        let mut state = StateDB::new();
+        let alice: Address = [1u8; 32];
+        let bob: Address = [2u8; 32];
+        let coinbase: Address = [3u8; 32];
+        state.set_account(alice, Account { balance: 1_000_000, nonce: 0, ..Default::default() });
+
+        let tx = Transaction {
+            hash: [0u8; 32],
+            from: alice,
+            to: bob,
+            value: 0,
+            nonce: 0,
+            base_fee: 12,
+            priority_fee: 5,
+            gas_limit: 1_000,
+            action: TxAction::Transfer,
+            signature: vec![0u8; 2420],
+            received_at: 0,
+            from_pubkey: vec![0u8; 1312],
+        };
+
+        let block = Block {
+            header: BlockHeader {
+                parent_hash: [0u8; 32],
+                number: 1,
+                slot: 0,
+                timestamp: 0,
+                proposer: [0u8; 32],
+                tx_root: [0u8; 32],
+                state_root: [0u8; 32],
+                gas_limit: 10_000_000,
+                gas_used: 1_000,
+                base_fee: 10,
+                signature: vec![0u8; 2420],
+            },
+            transactions: vec![tx],
+        };
+
+        Executor::execute_block(&mut state, &block, &coinbase).unwrap();
+
+        // capped at 12/gas, not 15/gas
+        assert_eq!(state.get_account(&coinbase).balance, 12_000);
+    }
+
     #[test]
     fn test_insufficient_balance() {
         let mut state = StateDB::new();
