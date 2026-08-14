@@ -145,6 +145,16 @@ impl Node {
             for tx in &block.transactions {
                 mempool.remove(&tx.hash);
             }
+            // P3 FIX (core-dev review): keep the mempool's admission floor
+            // in sync with the real base fee. Before this, MempoolConfig's
+            // base_fee was set once at startup (default 1_000) and never
+            // updated — harmless while base_fee was static forever, but
+            // now that next_base_fee() (see consensus::producer) actually
+            // moves it block to block, a stale mempool floor would let in
+            // transactions priced for a market that no longer exists, or
+            // reject ones that would actually clear. Set to what the
+            // *next* block will use, matching what producer.rs computes.
+            mempool.update_base_fee(crate::consensus::producer::next_base_fee(&block.header));
         }
 
         // 7. Persist block + state
@@ -237,6 +247,13 @@ impl Node {
 
         // Queue for gossip to peers
         self.app.outbox.lock().unwrap().push(GossipMsg::NewBlock(block.clone()));
+
+        // P3 FIX: same mempool base-fee sync as on_block() — see the
+        // comment there. Needed on the produce path too, not just the
+        // receive path, since a validator can go many slots without ever
+        // calling on_block if it's always the one proposing.
+        self.app.mempool.lock().unwrap()
+            .update_base_fee(crate::consensus::producer::next_base_fee(&block.header));
 
         Ok(Some(block))
     }
