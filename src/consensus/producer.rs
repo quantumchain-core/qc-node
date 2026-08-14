@@ -188,8 +188,13 @@ mod tests {
         let mut state = StateDB::new();
         let tx = make_tx(1, 0);
 
-        // gas_cost = gas_limit * base_fee = 21_000 * 1_000 = 21_000_000
-        // value = 10 -> total needed = 21_000_010
+        // Actual gas_cost now depends on next_base_fee() (P3) and the
+        // paid priority_fee, not a fixed gas_limit*1_000 — this test only
+        // checks the block was produced and signed, not the exact
+        // resulting balance (see test_try_produce_block_advances_head_
+        // and_queues_gossip in node/mod.rs for a test that does check the
+        // exact number). 100_000_000 is comfortably more than enough
+        // regardless of exactly where base_fee lands.
         state.set_account(tx.from, Account {
             balance: 100_000_000,
             nonce: 0,
