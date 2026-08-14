@@ -112,7 +112,25 @@ impl Executor {
         // should send 0, but a nonzero value is simply not moved rather
         // than treated as an error, to keep this permissive for now).
         let value = if matches!(tx.action, TxAction::Transfer) { tx.value as u128 } else { 0 };
-        let gas_cost = (tx.gas_limit as u128) * base_fee;
+
+        // P3 FIX (core-dev review): was `let gas_cost = (tx.gas_limit as
+        // u128) * base_fee;` — charged (and paid to coinbase) exactly the
+        // block's base fee, completely ignoring tx.priority_fee. The
+        // mempool already sorts by effective_fee (base+priority, capped
+        // at the tx's declared max fee) to decide inclusion order, but
+        // execution never actually paid out the tip that earned that
+        // priority — validators had no on-chain incentive to prefer
+        // higher-tipped transactions beyond mempool defaults. Now charges
+        // (and pays to coinbase) the same effective-fee formula the
+        // mempool already uses for ordering, so the tip is real.
+        // No burn mechanism exists in this chain (the full amount always
+        // went to coinbase before this fix, for base_fee alone) — this
+        // preserves that: the full effective fee, not just the base
+        // portion, goes to coinbase. Total supply is still conserved
+        // (see AUDIT-008 regression tests in state/mod.rs), just the
+        // amount moving is now demand-and-tip-aware instead of fixed.
+        let effective_fee_per_gas = (tx.base_fee as u128).min(base_fee + tx.priority_fee as u128);
+        let gas_cost = (tx.gas_limit as u128) * effective_fee_per_gas;
         let total_cost = value + gas_cost;
 
         // Solvency check
